@@ -1,0 +1,157 @@
+---
+title: "Module 1: Introduction to R and RStudio"
+output:
+  learnr::tutorial:
+    progressive: true
+    allow_skip: false
+runtime: shiny_prerendered
+---
+
+```{r setup, include=FALSE}
+library(learnr)
+library(gradethis)
+library(shiny)
+library(DBI)
+library(RPostgres)
+
+# Shared database helper functions (get_con, get_or_create_student,
+# get_exercise_id, log_attempt, log_chat)
+source("../R/db_utils.R")
+
+gradethis::gradethis_setup()
+```
+
+```{r, context="server"}
+# --- Identity capture -------------------------------------------------
+# Every tutorial session starts by asking for a name. This is a
+# deliberately simple stand-in for real identity -- no roster/Canvas
+# matching yet. The resulting student_id is stored on session$userData,
+# which is the safe, session-scoped place to keep it so that exercise
+# checking code (which runs in a more isolated context) can still reach
+# it via shiny::getDefaultReactiveDomain().
+
+showModal(modalDialog(
+  title = "Welcome!",
+  "Please enter your name to begin this tutorial.",
+  textInput("student_name", label = NULL, placeholder = "Your name"),
+  footer = actionButton("submit_name", "Start Tutorial"),
+  easyClose = FALSE
+))
+
+observeEvent(input$submit_name, {
+  req(input$student_name)
+  con <- get_con()
+  sid <- get_or_create_student(con, trimws(input$student_name))
+  dbDisconnect(con)
+
+  session$userData$student_id <- sid
+  removeModal()
+})
+```
+
+## Welcome
+
+This tutorial is the first step before we get into any real course material. The goal here isn't to make you a programmer -- it's to make sure you're comfortable with R and RStudio as tools, so that later material (which may come from your instructor or from an AI assistant) doesn't feel unfamiliar.
+
+Nothing in this module involves writing real R code yet -- that starts in Module 2.
+
+## Installing R and RStudio
+
+R and RStudio are two different pieces of software that work together:
+
+- **R** is the actual programming language -- the engine that runs your code.
+- **RStudio** is an *interface* for working with R more comfortably -- it doesn't replace R, it sits on top of it.
+
+You install them in that order: R first (from CRAN), then RStudio (from posit.co), since RStudio needs an existing R installation to attach to.
+
+```{r install-quiz, echo=FALSE}
+question("Which of these is true about the relationship between R and RStudio?",
+  answer("RStudio replaces R -- you only need to install RStudio.", message = "Not quite -- RStudio needs R installed underneath it."),
+  answer("R is the language/engine, and RStudio is an interface built on top of it.", correct = TRUE),
+  answer("R and RStudio are two unrelated tools with no connection.", message = "They're closely related -- RStudio is built specifically to work with R."),
+  allow_retry = TRUE
+)
+```
+
+## The RStudio panes
+
+When you open RStudio, you'll typically see four panes:
+
+- **Source** (top-left) -- where you write and edit scripts
+- **Console** (bottom-left) -- where code actually runs, one command at a time
+- **Environment / History** (top-right) -- shows the objects you've created and what you've run
+- **Files / Plots / Packages / Help** (bottom-right) -- a multi-purpose pane for browsing files, viewing plots, managing packages, and reading documentation
+
+```{r panes-quiz, echo=FALSE}
+question("If you want to see a plot you just created, which pane would you look at?",
+  answer("Source"),
+  answer("Console"),
+  answer("Environment / History"),
+  answer("Files / Plots / Packages / Help", correct = TRUE),
+  allow_retry = TRUE
+)
+```
+
+## Working directory
+
+Your **working directory** is the folder R considers "home base" for the current session -- it's where R will look for files by default, and where it'll save things unless told otherwise.
+
+The most reliable way to manage this is with an **RStudio Project** (a folder with a `.Rproj` file in it). Opening a project automatically sets the working directory to that project's folder, which avoids a lot of "file not found" headaches later, especially once we start importing data.
+
+```{r wd-quiz, echo=FALSE}
+question("What's the main benefit of using an RStudio Project instead of just opening loose scripts?",
+  answer("It makes your code run faster.", message = "Not related to speed."),
+  answer("It automatically sets your working directory to a consistent, predictable folder.", correct = TRUE),
+  answer("It's required to install packages.", message = "Packages install fine either way."),
+  allow_retry = TRUE
+)
+```
+
+## Wrapping up
+
+### Quick system check
+
+Before moving on, let's confirm everything's connected properly. Replace the placeholder below with your own name, keeping the quotation marks, and click **Submit Answer**.
+
+```{r name-exercise, exercise=TRUE}
+"___"
+```
+
+```{r name-exercise-check}
+grade_this({
+  session <- shiny::getDefaultReactiveDomain()
+  student_id <- if (!is.null(session)) session$userData$student_id else NA
+
+  passed <- TRUE
+  feedback_message <- "Looks good!"
+
+  if (is.null(.result) || !is.character(.result) || nchar(trimws(.result)) == 0) {
+    passed <- FALSE
+    feedback_message <- "Make sure to type your name inside quotation marks."
+  } else if (identical(trimws(.result), "___")) {
+    passed <- FALSE
+    feedback_message <- "Looks like the placeholder is still there -- replace `___` with your own name."
+  }
+
+  # Log this attempt regardless of pass/fail -- this is the main point
+  # of this exercise: confirming the whole pipeline actually works.
+  tryCatch({
+    con <- get_con()
+    exercise_id <- get_exercise_id(con, "module1_name_check")
+    log_attempt(con, student_id, exercise_id, .user_code, passed, feedback_message)
+    dbDisconnect(con)
+  }, error = function(e) {
+    message(paste("Logging failed:", e$message))
+  })
+
+  if (passed) {
+    pass("Nice -- that's exactly right! Your response has been recorded.")
+  } else {
+    fail(feedback_message)
+  }
+})
+```
+
+### Up next
+
+Module 2 introduces actual R code -- installing packages, reading the console, and running provided scripts.
