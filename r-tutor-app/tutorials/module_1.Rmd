@@ -4,6 +4,7 @@ output:
   learnr::tutorial:
     progressive: true
     allow_skip: false
+    theme: !expr bslib::bs_theme(version = 5, bootswatch = "cerulean")
 runtime: shiny_prerendered
 ---
 
@@ -13,12 +14,42 @@ library(gradethis)
 library(shiny)
 library(DBI)
 library(RPostgres)
+library(bslib)
+library(shinychat)
+library(ellmer)
+library(promises)
 
 # Shared database helper functions (get_con, get_or_create_student,
 # get_exercise_id, log_attempt, log_chat)
 source("../R/db_utils.R")
+# Tutor chat context assembly, start_tutor_chat(), and the shared
+# bs5_theme_dependencies()/wire_tutor_chat()/log_attempt_and_maybe_open_chat()
+# wiring used by every module's tutor chat panel.
+source("../R/tutor_utils.R")
 
 gradethis::gradethis_setup()
+
+# Grading logic for this module's one exercise. A plain function (not a
+# grade_this() object -- see module_2.Rmd's setup chunk for why) so both
+# the *-check and *-error-check chunks below can share it.
+evaluate_name_exercise <- function(result, stage) {
+  passed <- TRUE
+  feedback_message <- "Nice -- that's exactly right! Your response has been recorded."
+
+  if (is.null(result) || !is.character(result) || nchar(trimws(result)) == 0) {
+    passed <- FALSE
+    feedback_message <- if (identical(stage, "error_check")) {
+      "That code doesn't run as-is -- check that your name is wrapped in matching quotation marks."
+    } else {
+      "Make sure to type your name inside quotation marks."
+    }
+  } else if (identical(trimws(result), "___")) {
+    passed <- FALSE
+    feedback_message <- "Looks like the placeholder is still there -- replace `___` with your own name."
+  }
+
+  list(passed = passed, message = feedback_message)
+}
 ```
 
 ```{r, context="server"}
@@ -49,7 +80,19 @@ observeEvent(input$submit_name, {
 })
 ```
 
+```{r, context="server"}
+# --- Tutor chat wiring --------------------------------------------------
+# Always-available (collapsed by default) tutor chat panel for the one
+# graded exercise. See wire_tutor_chat() in R/tutor_utils.R.
+
+wire_tutor_chat("module1_name_check", "tutor_chat_1", "tutor_accordion_1", "Ask the Tutor", input, output, session)
+```
+
 ## Welcome
+
+```{r, echo=FALSE}
+bs5_theme_dependencies()
+```
 
 This tutorial is the first step before we get into any real course material. The goal here isn't to make you a programmer -- it's to make sure you're comfortable with R and RStudio as tools, so that later material (which may come from your instructor or from an AI assistant) doesn't feel unfamiliar.
 
@@ -121,35 +164,38 @@ Before moving on, let's confirm everything's connected properly. Replace the pla
 grade_this({
   session <- shiny::getDefaultReactiveDomain()
   student_id <- if (!is.null(session)) session$userData$student_id else NA
-
-  passed <- TRUE
-  feedback_message <- "Looks good!"
-
-  if (is.null(.result) || !is.character(.result) || nchar(trimws(.result)) == 0) {
-    passed <- FALSE
-    feedback_message <- "Make sure to type your name inside quotation marks."
-  } else if (identical(trimws(.result), "___")) {
-    passed <- FALSE
-    feedback_message <- "Looks like the placeholder is still there -- replace `___` with your own name."
-  }
-
-  # Log this attempt regardless of pass/fail -- this is the main point
-  # of this exercise: confirming the whole pipeline actually works.
-  tryCatch({
-    con <- get_con()
-    exercise_id <- get_exercise_id(con, "module1_name_check")
-    log_attempt(con, student_id, exercise_id, .user_code, passed, feedback_message)
-    dbDisconnect(con)
-  }, error = function(e) {
-    message(paste("Logging failed:", e$message))
-  })
-
-  if (passed) {
-    pass("Nice -- that's exactly right! Your response has been recorded.")
-  } else {
-    fail(feedback_message)
-  }
+  result <- evaluate_name_exercise(.result, .stage)
+  log_attempt_and_maybe_open_chat("module1_name_check", student_id, .user_code, result$passed, result$message, "tutor_accordion_1", session)
+  if (result$passed) pass(result$message) else fail(result$message)
 })
+```
+
+```{r name-exercise-error-check}
+grade_this({
+  session <- shiny::getDefaultReactiveDomain()
+  student_id <- if (!is.null(session)) session$userData$student_id else NA
+  result <- evaluate_name_exercise(.result, .stage)
+  log_attempt_and_maybe_open_chat("module1_name_check", student_id, .user_code, result$passed, result$message, "tutor_accordion_1", session)
+  if (result$passed) pass(result$message) else fail(result$message)
+})
+```
+
+Stuck, or want to double check your thinking? The tutor chat below is available any time -- before you submit, after a failed attempt, or even after you've already passed.
+
+```{r, echo=FALSE}
+accordion(
+  id = "tutor_accordion_1",
+  open = FALSE,
+  accordion_panel(
+    title = "Ask the Tutor",
+    chat_ui(
+      "tutor_chat_1",
+      placeholder = "Ask a question about this exercise...",
+      greeting = "Hi! I'm here if you want to talk through this exercise. Ask me anything -- I won't just hand you the answer, but I'll help you get there.",
+      allow_attachments = FALSE
+    )
+  )
+)
 ```
 
 ### Up next

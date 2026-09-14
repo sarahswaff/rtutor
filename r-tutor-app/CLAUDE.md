@@ -130,6 +130,16 @@ since `accordion(id = ...)` exposes the set of currently-open panel values as th
 input. This covers both a manual open and the failure-triggered
 `accordion_panel_open()` call, since both update the same input.
 
+**This entire wiring is shared, not per-module.** `wire_tutor_chat(exercise_key, chat_id,
+accordion_id, panel_value, input, output, session)` and
+`log_attempt_and_maybe_open_chat(exercise_key, student_id, user_code, passed, message,
+accordion_id, session)` live in `R/tutor_utils.R` and are used identically by every module
+(Module 1's one exercise and both of Module 2's). Call `wire_tutor_chat()` once per exercise
+from a `context="server"` chunk, passing that chunk's own `input`/`output`/`session` (it's a
+plain function, not itself in the server closure, so it needs them explicitly). Only the
+per-exercise *grading logic* (the `evaluate_<exercise>()` functions) is module-specific and
+belongs in each module's own `setup` chunk -- see "gradethis check chunks" below.
+
 **bslib/shinychat require Bootstrap 5, but learnr's tutorial template defaults to Bootstrap
 3.** Any module using `bslib::accordion()`, `shinychat::chat_ui()`, or any other BS5-only
 component MUST do both of the following, or the components silently fail to render (browser
@@ -137,16 +147,15 @@ console: "requires Bootstrap version 5 but this page is using version 3") with n
 surfaced to the student:
 1. Add `theme: !expr bslib::bs_theme(version = 5, bootswatch = "cerulean")` under
    `learnr::tutorial:` in the YAML header (this affects pandoc's static template only).
-2. Also emit `htmltools::tagList(bslib::bs_theme_dependencies(bslib::bs_theme(version = 5,
-   bootswatch = "cerulean")))` as the return value of a plain (non-`context="server"`) chunk
-   placed inside the first `##` topic (NOT before the first heading -- content before any
-   `##` heading renders in the wrong place in learnr's layout). This actually injects the
-   BS5 JS/CSS dependencies into the live Shiny page; step 1 alone is not sufficient. Do NOT
-   use `shiny::bootstrapLib()` for this -- printed directly in a chunk it dumps its own
-   function source as literal text onto the page; `bs_theme_dependencies()` wrapped in
-   `tagList()` is the version that actually works.
-Module 1 has no bslib components and was left alone, but ANY module (existing or new) that
-adds a tutor chat panel needs both of the steps above.
+2. Also call `` `r bs5_theme_dependencies()` `` (defined in `R/tutor_utils.R`) as the return
+   value of a plain (non-`context="server"`) chunk placed inside the first `##` topic (NOT
+   before the first heading -- content before any `##` heading renders in the wrong place in
+   learnr's layout). This actually injects the BS5 JS/CSS dependencies into the live Shiny
+   page; step 1 alone is not sufficient. Do NOT use `shiny::bootstrapLib()` for this --
+   printed directly in a chunk it dumps its own function source as literal text onto the
+   page; `bs_theme_dependencies()` wrapped in `tagList()` (what `bs5_theme_dependencies()`
+   does) is the version that actually works.
+Both Module 1 and Module 2 already do this -- any new module needs both steps too.
 
 **gradethis check chunks MUST have a matching `*-error-check` chunk, or errors are graded
 by gradethis's generic default instead of your code.** If a student's exercise code throws
@@ -166,8 +175,9 @@ the enclosing environment per call site and reusing the same object across chunk
 "Can't change the parent of a locked environment". Instead, put the actual grading
 *logic* in a plain function (not a `grade_this()` object) in `setup`, and call `grade_this({...})`
 fresh, inline, in each `*-check`/`*-error-check` chunk, delegating to that shared plain
-function. See `evaluate_comment_exercise()` / `evaluate_fix_the_bug_exercise()` and
-`log_attempt_and_maybe_open_chat()` in module_2.Rmd's setup chunk for the working pattern.
+function. See `evaluate_name_exercise()` in module_1.Rmd and `evaluate_comment_exercise()` /
+`evaluate_fix_the_bug_exercise()` in module_2.Rmd for the per-module half of this pattern;
+`log_attempt_and_maybe_open_chat()` itself is shared (see above).
 
 **Tutor context assembly** (see `tutor_utils.R`): before starting each new chat, query the
 attempt count + most recent attempt (code, pass/fail, gradethis message) + the exercise's
@@ -228,35 +238,35 @@ without understanding why each part exists:
 - Every exercise attempt is logged as its own row (explicitly chosen over update-in-place).
 
 ## Current status / immediate next step
-Module 1 is fully built and tested end-to-end: identity capture -> quiz content -> gated
-exercise -> logged attempt with correct student_id, including the ### restructuring fix for
-progressive gating. It has no tutor chat panel (predates that feature) and was left alone --
-see "Tutor chat / bslib retrofit" below.
+Module 1 and Module 2 are both fully built and tested end-to-end, in the same style: identity
+capture -> instructional/quiz content -> gated exercise(s), each backed by an always-available
+tutor chat panel that auto-opens on a failed attempt. Module 1's one exercise
+(`module1_name_check`) and Module 2's two (`module2_comment_out`, `module2_fix_error`) all
+share the exact same wiring -- `wire_tutor_chat()`, `log_attempt_and_maybe_open_chat()`, and
+`bs5_theme_dependencies()` live once in `R/tutor_utils.R` and are called identically from
+each module's `setup`/`context="server"` chunks; only each exercise's own
+`evaluate_<exercise>()` grading logic differs. `exercises.learning_objective` is set for all
+three exercise rows in Supabase (schema, Module 1 + Module 2 rows, and both exercise rows all
+confirmed live).
 
-Module 2 is fully built and tested end-to-end: identity capture -> packages/console/comments/
-running-code/errors/help content -> two gated exercises (`module2_comment_out`,
-`module2_fix_error`), each with its own always-available tutor chat panel that auto-opens on
-a failed attempt. Schema additions (the `learning_objective` column, the Module 2 row, and
-its two exercise rows) have been run against the real Supabase database. Verified against the
-live app (via `rmarkdown::run()` + a browser, not just code review): identity modal + DB
-write, progressive gating (submitting is required before "Continue" unlocks -- confirmed both
-the blocked and unblocked cases), both exercises' pass/fail/error-in-submitted-code paths,
-DB attempt logging with correct student_id/exercise_id, tutor chat auto-open on failure, and a
-real back-and-forth tutor conversation (both directions confirmed in `chat_logs`) after
-Anthropic credits were added -- the reply correctly asked a clarifying question rather than
-guessing or leaking the answer, consistent with the system prompt's design.
+Verified against the live app (via `rmarkdown::run()` + a browser, not just code review, for
+BOTH modules): identity modal + DB write, progressive gating (submitting is required before
+"Continue" unlocks -- confirmed both the blocked and unblocked cases), every exercise's
+pass/fail/error-in-submitted-code paths, DB attempt logging with correct
+student_id/exercise_id, tutor chat auto-open on failure, and a real back-and-forth tutor
+conversation (both directions confirmed in `chat_logs`) -- the reply correctly asked a
+clarifying question rather than guessing or leaking the answer, consistent with the system
+prompt's design.
 
-**Tutor chat / bslib retrofit:** Module 2 needed several fixes not anticipated in earlier
-planning -- see "Key conventions" above (BS5 theming, `*-error-check` chunks, the
+**Tutor chat / bslib retrofit history:** Module 2 needed several fixes not anticipated in
+earlier planning -- see "Key conventions" above (BS5 theming, `*-error-check` chunks, the
 setup-chunk-shared-function pattern for grading logic, and the deprecation of
-`chat_mod_ui()`/`chat_mod_server()`). These apply to every future module that adds a tutor
-chat panel or any other bslib component. Module 1 does not currently have a tutor chat panel,
-so it isn't broken by any of this -- but if Module 1 later gets one retrofitted, it needs the
-same BS5 setup.
+`chat_mod_ui()`/`chat_mod_server()`). Module 1 was retrofitted to match once the pattern was
+proven out, and the shared wiring was extracted into `R/tutor_utils.R` at the same time so
+Modules 3-5 reuse it rather than re-copying it per module.
 
 **Next actions, in order:**
-1. Confirm the "Start Over" freeze reported from RStudio's Viewer pane is resolved (or isolate
-   it) -- see the gotcha above. Try an external browser first.
-2. Modules 3-5 follow the same established pattern -- including the bslib/BS5 conventions
-   above for any module that adds a tutor chat panel.
-3. Instructor dashboard, once there's real attempt/chat data to build it against.
+1. Modules 3-5 follow the same established pattern -- source `R/tutor_utils.R`, call
+   `bs5_theme_dependencies()` + `wire_tutor_chat()` for any exercise, write only the
+   exercise-specific `evaluate_<exercise>()` grading function per module.
+2. Instructor dashboard, once there's real attempt/chat data to build it against.
