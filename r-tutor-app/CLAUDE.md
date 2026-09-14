@@ -105,12 +105,69 @@ NOT a global `options()` call, which is unsafe across concurrent sessions. Exerc
 code (which runs semi-isolated from the main server chunk) reaches it via
 `shiny::getDefaultReactiveDomain()$userData$student_id`.
 
-**Tutor chat trigger design (agreed, not yet built):** the chat must be ALWAYS accessible,
-not gated behind failure -- passing a gradethis check doesn't guarantee real understanding,
-and the student should be actively encouraged to use it any time, including after passing.
-On a FAILED attempt specifically, the chat should auto-open. Planned approach:
-`bslib::accordion_panel_open()` targeting an accordion (collapsed by default, so it's a
-manual toggle the rest of the time) that houses `chat_mod_ui()`. NOT YET TESTED.
+**Tutor chat trigger design (built and tested in Module 2 -- follow this pattern):** the
+chat must be ALWAYS accessible, not gated behind failure -- passing a gradethis check
+doesn't guarantee real understanding, and the student should be actively encouraged to use
+it any time, including after passing. On a FAILED attempt specifically, the chat auto-opens
+via `bslib::accordion_panel_open(id = <accordion_id>, values = "Ask the Tutor", session =
+session)`, called from inside the exercise's check code, targeting an
+`accordion(id = ..., open = FALSE, accordion_panel(title = "Ask the Tutor", chat_ui(...)))`
+that houses the chat.
+
+`chat_mod_ui()`/`chat_mod_server()` are DEPRECATED as of shinychat 0.5.0 (the version
+installed in this project) -- do not use them despite older references to them in this
+file's history. Instead wire the chat manually with `shinychat::chat_ui()` in the UI plus,
+in a `context="server"` chunk, `observeEvent(input[[paste0(chat_id, "_user_input")]], ...)`
+that calls `client$stream_async(user_text)` and `shinychat::chat_append(chat_id, stream,
+session = session)`. This manual form (not the higher-level `chat_server()`) is what makes
+it possible to log both directions of every message via `log_chat()`, since neither
+`chat_mod_server()` nor `chat_server()` expose a per-message callback hook.
+
+A fresh `start_tutor_chat()` client (plus `shinychat::chat_clear(chat_id, greeting = TRUE,
+session = session)` to visually reset the panel) is created every time the accordion panel
+transitions from closed to open -- detected via `observeEvent(input[[accordion_id]], ...)`,
+since `accordion(id = ...)` exposes the set of currently-open panel values as that Shiny
+input. This covers both a manual open and the failure-triggered
+`accordion_panel_open()` call, since both update the same input.
+
+**bslib/shinychat require Bootstrap 5, but learnr's tutorial template defaults to Bootstrap
+3.** Any module using `bslib::accordion()`, `shinychat::chat_ui()`, or any other BS5-only
+component MUST do both of the following, or the components silently fail to render (browser
+console: "requires Bootstrap version 5 but this page is using version 3") with no error
+surfaced to the student:
+1. Add `theme: !expr bslib::bs_theme(version = 5, bootswatch = "cerulean")` under
+   `learnr::tutorial:` in the YAML header (this affects pandoc's static template only).
+2. Also emit `htmltools::tagList(bslib::bs_theme_dependencies(bslib::bs_theme(version = 5,
+   bootswatch = "cerulean")))` as the return value of a plain (non-`context="server"`) chunk
+   placed inside the first `##` topic (NOT before the first heading -- content before any
+   `##` heading renders in the wrong place in learnr's layout). This actually injects the
+   BS5 JS/CSS dependencies into the live Shiny page; step 1 alone is not sufficient. Do NOT
+   use `shiny::bootstrapLib()` for this -- printed directly in a chunk it dumps its own
+   function source as literal text onto the page; `bs_theme_dependencies()` wrapped in
+   `tagList()` is the version that actually works.
+Module 1 has no bslib components and was left alone, but ANY module (existing or new) that
+adds a tutor chat panel needs both of the steps above.
+
+**gradethis check chunks MUST have a matching `*-error-check` chunk, or errors are graded
+by gradethis's generic default instead of your code.** If a student's exercise code throws
+a real R error (a very likely outcome for "fix the error"-style exercises, and possible by
+accident in any exercise), learnr routes grading to `<label>-error-check` -- and if that
+chunk doesn't exist, it falls back entirely to `gradethis_error_checker()`'s generic
+message, silently skipping your `log_attempt()` call and your `accordion_panel_open()` auto-open.
+Define both `<label>-check` and `<label>-error-check` for every graded exercise. Do NOT
+name the exercise chunk itself with "error" as a standalone word in the label (e.g. don't
+use `fix-error-exercise`) -- learnr's suffix-stripping to recover the base exercise label
+from `<label>-error-check` gets confused by an extra "error" already in the label and the
+tutorial fails to even start. Use something like `fix-the-bug-exercise` instead.
+
+Also note: a `grade_this({...})` result CANNOT be assigned to a variable in `setup` and
+then referenced by name from multiple `*-check`/`*-error-check` chunks -- gradethis rewires
+the enclosing environment per call site and reusing the same object across chunks throws
+"Can't change the parent of a locked environment". Instead, put the actual grading
+*logic* in a plain function (not a `grade_this()` object) in `setup`, and call `grade_this({...})`
+fresh, inline, in each `*-check`/`*-error-check` chunk, delegating to that shared plain
+function. See `evaluate_comment_exercise()` / `evaluate_fix_the_bug_exercise()` and
+`log_attempt_and_maybe_open_chat()` in module_2.Rmd's setup chunk for the working pattern.
 
 **Tutor context assembly** (see `tutor_utils.R`): before starting each new chat, query the
 attempt count + most recent attempt (code, pass/fail, gradethis message) + the exercise's
@@ -144,6 +201,21 @@ without understanding why each part exists:
 - A corrupted `.RData` previously caused RStudio to hang indefinitely on startup. Workspace
   save/restore is now disabled in **Global Options > General**. If this resurfaces, delete
   `~/.RData` and confirm that setting is still off.
+- Outside RStudio, `rmarkdown::run()` doesn't know where RStudio's bundled pandoc lives --
+  set `Sys.setenv(RSTUDIO_PANDOC = ...)` first (see `R/run_tutorial.R`, which has the actual
+  path on this machine).
+- **Reported (not reproduced): "Run Document" in RStudio's Viewer pane, clicking a module's
+  "Start Over" link, then the whole tutorial stops responding to clicks -- no error, no
+  spinner.** Tested extensively via `R/run_tutorial.R` in an external browser (repeatedly,
+  clean sessions) and could not reproduce it there -- Start Over, navigation, Run Code, and
+  Submit Answer all kept working. Since every DB-backed action (identity capture, attempt
+  logging, chat) opens a fresh Postgres connection synchronously with no timeout, a stalled
+  connection would freeze the whole single-threaded Shiny process exactly like this, with no
+  visible error -- `connect_timeout = 10` was added to `get_con()` in `db_utils.R` as a
+  hardening measure regardless of whether that's the actual cause. If this resurfaces, the
+  first diagnostic step is testing with the tutorial forced into an external browser instead
+  of the Viewer pane (Global Options, or just call `rmarkdown::run()` from the console
+  yourself) to isolate a Viewer-pane-specific issue from a real app bug.
 
 ## Deliberate scope decisions -- don't relitigate without a real reason
 - No password auth. Students identified by name + email only; roster-CSV matching is planned
@@ -158,25 +230,33 @@ without understanding why each part exists:
 ## Current status / immediate next step
 Module 1 is fully built and tested end-to-end: identity capture -> quiz content -> gated
 exercise -> logged attempt with correct student_id, including the ### restructuring fix for
-progressive gating.
+progressive gating. It has no tutor chat panel (predates that feature) and was left alone --
+see "Tutor chat / bslib retrofit" below.
 
-Module 2 is in progress:
-- Schema additions written (not yet confirmed run): `learning_objective` column added to
-  `exercises`; Module 2 + two exercise rows (`module2_comment_out`, `module2_fix_error`)
-  -- see schema.sql and the ALTER/INSERT statements from recent conversation history.
-- `R/tutor_utils.R` is written (system prompt + context-assembly functions +
-  `start_tutor_chat()`) but **NOT YET TESTED** -- this is the immediate next step.
+Module 2 is fully built and tested end-to-end: identity capture -> packages/console/comments/
+running-code/errors/help content -> two gated exercises (`module2_comment_out`,
+`module2_fix_error`), each with its own always-available tutor chat panel that auto-opens on
+a failed attempt. Schema additions (the `learning_objective` column, the Module 2 row, and
+its two exercise rows) have been run against the real Supabase database. Verified against the
+live app (via `rmarkdown::run()` + a browser, not just code review): identity modal + DB
+write, progressive gating (submitting is required before "Continue" unlocks -- confirmed both
+the blocked and unblocked cases), both exercises' pass/fail/error-in-submitted-code paths,
+DB attempt logging with correct student_id/exercise_id, tutor chat auto-open on failure, and a
+real back-and-forth tutor conversation (both directions confirmed in `chat_logs`) after
+Anthropic credits were added -- the reply correctly asked a clarifying question rather than
+guessing or leaking the answer, consistent with the system prompt's design.
+
+**Tutor chat / bslib retrofit:** Module 2 needed several fixes not anticipated in earlier
+planning -- see "Key conventions" above (BS5 theming, `*-error-check` chunks, the
+setup-chunk-shared-function pattern for grading logic, and the deprecation of
+`chat_mod_ui()`/`chat_mod_server()`). These apply to every future module that adds a tutor
+chat panel or any other bslib component. Module 1 does not currently have a tutor chat panel,
+so it isn't broken by any of this -- but if Module 1 later gets one retrofitted, it needs the
+same BS5 setup.
 
 **Next actions, in order:**
-1. Run the schema additions against Supabase if not already done.
-2. Test `start_tutor_chat()` standalone (source db_utils.R + tutor_utils.R, create a test
-   student, log a fake failed attempt, call `start_tutor_chat()`, send a message, confirm
-   the response actually follows the system prompt's escalation/question-based behavior).
-3. Build the shinychat UI into `module_2.Rmd`: `chat_mod_ui()`/`chat_mod_server()`, wired to
-   auto-open via `bslib::accordion_panel_open()` on a failed attempt, with both directions
-   of every conversation logged via `log_chat()`.
-4. Write Module 2's instructional/quiz content for the remaining topics (packages, console,
-   comments, running code, error messages, help()).
-5. Test Module 2 end-to-end, same rigor as Module 1.
-6. Modules 3-5 follow the same established pattern.
-7. Instructor dashboard, once there's real attempt/chat data to build it against.
+1. Confirm the "Start Over" freeze reported from RStudio's Viewer pane is resolved (or isolate
+   it) -- see the gotcha above. Try an external browser first.
+2. Modules 3-5 follow the same established pattern -- including the bslib/BS5 conventions
+   above for any module that adds a tutor chat panel.
+3. Instructor dashboard, once there's real attempt/chat data to build it against.

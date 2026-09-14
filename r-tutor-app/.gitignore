@@ -5,3 +5,4 @@
 .Ruserdata
 tutorials/.Rhistory
 tutorials/*.html
+tutorials/*_files/

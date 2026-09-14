@@ -24,12 +24,15 @@ create table modules (
 
 -- exercises: individual learnr exercises within a module.
 -- exercise_key must match the label used inside the learnr .Rmd exercise chunk.
+-- learning_objective is plain-language and given to the LLM tutor for context --
+-- it must never describe or hint at the actual correct answer.
 create table exercises (
-  exercise_id   serial primary key,
-  module_id     int not null references modules(module_id),
-  exercise_key  text not null unique,
-  title         text not null,
-  order_index   int not null
+  exercise_id         serial primary key,
+  module_id           int not null references modules(module_id),
+  exercise_key        text not null unique,
+  title               text not null,
+  order_index         int not null,
+  learning_objective  text
 );
 
 -- exercise_attempts: one row per submission (every attempt kept, per your call).

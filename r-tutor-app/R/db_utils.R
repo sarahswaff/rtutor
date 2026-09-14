@@ -8,14 +8,20 @@ library(RPostgres)
 
 #' Open a connection to the Supabase Postgres database.
 #' Reads connection details from environment variables set in .Renviron.
+#' connect_timeout caps how long a hung/unreachable connection attempt can
+#' block the single-threaded Shiny process -- without it, a stalled network
+#' connection (a flaky wifi hiccup, a VPN, a Supabase blip) freezes the
+#' entire app indefinitely with no error and no spinner, since every
+#' identity/exercise/chat action opens a fresh connection synchronously.
 get_con <- function() {
   dbConnect(
     RPostgres::Postgres(),
-    dbname   = "postgres",
-    host     = Sys.getenv("SUPABASE_DB_HOST"),
-    port     = 5432,
-    user     = Sys.getenv("SUPABASE_DB_USER"),
-    password = Sys.getenv("SUPABASE_DB_PASSWORD")
+    dbname          = "postgres",
+    host            = Sys.getenv("SUPABASE_DB_HOST"),
+    port            = 5432,
+    user            = Sys.getenv("SUPABASE_DB_USER"),
+    password        = Sys.getenv("SUPABASE_DB_PASSWORD"),
+    connect_timeout = 10
   )
 }
 

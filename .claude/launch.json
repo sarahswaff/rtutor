@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "module_2_tutorial",
+      "runtimeExecutable": "C:\\Program Files\\R\\R-4.5.2\\bin\\Rscript.exe",
+      "runtimeArgs": ["C:/Users/sarah/OneDrive/Documents/R_tutor/r-tutor-app/R/run_tutorial.R"],
+      "port": 7412
+    }
+  ]
+}
