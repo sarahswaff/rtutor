@@ -21,9 +21,16 @@ LLM-provided scripts, not write substantial code from scratch.
   in the Anthropic console.
 
 ## Deployment target
-Not finalized yet (shinyapps.io vs Posit Connect vs self-hosted, still undecided).
-IMPORTANT: whatever the target, persistence must live in the external Postgres DB, never
-in local files -- shinyapps.io's filesystem is ephemeral and will silently lose local data.
+Posit Connect Cloud (connect.posit.cloud), deploying directly from the GitHub repo
+(sarahswaff/rtutor) -- each module is deployed as its own separate "content" item, pointed
+at its own self-contained folder under `deploy/` (see "Current status" below for why a
+separate, flattened `deploy/` copy exists per module rather than deploying `tutorials/`
+directly). Each deployment needs its own copy of the four `.Renviron` variables
+(`SUPABASE_DB_HOST`, `SUPABASE_DB_USER`, `SUPABASE_DB_PASSWORD`, `ANTHROPIC_API_KEY`) set in
+its own Connect Cloud dashboard settings.
+IMPORTANT: persistence lives in the external Postgres DB, never in local files -- this
+matters even more on a redeployed/restarted Connect Cloud instance than it did during local
+dev, since that filesystem is also ephemeral.
 
 ## Folder structure
 ```
@@ -78,6 +85,17 @@ r-tutor-app/
 A capstone pipeline assessment exists but is explicitly OUT of scope for the tutorial itself.
 
 ## Key conventions (established through real trial and error -- follow these)
+
+**SUPERSEDED, read this before anything else in this section: Modules 1-3 no longer use
+`learnr::question()` or `exercise=TRUE`/gradethis at all.** They were replaced with plain
+Shiny (`quiz_question_ui()`/`quiz_question_server()` and `exercise_ui()`/`exercise_server()`
+in `R/tutor_utils.R`) due to a serious, confirmed bug in learnr's own quiz/exercise
+rendering -- see "Current status" below for the full story. Any guidance further down in
+this section that references `question()`, `exercise=TRUE`, `grade_this()`, or gradethis
+(the "*-error-check chunks", the bare-`___`-placeholder note, etc.) describes the OLD
+pattern -- kept for historical/reference value, but do **not** follow it for Modules 4-5.
+Use the same plain-Shiny pattern Modules 1-3 now use instead; see "Current status" for
+exactly how.
 
 **Exercise count and difficulty scale with the module, not a fixed count or fixed
 minimalism.** Modules 1-2 landed on 1-2 exercises each because their content was mostly
@@ -312,212 +330,127 @@ gotcha below) -- so it's not purely a UX nicety.
   from testing, so it can be built against real shapes of data rather than guesses.
 - Every exercise attempt is logged as its own row (explicitly chosen over update-in-place).
 
+
 ## Current status / immediate next step
 
-**STILL UNRESOLVED, despite an earlier note in this file claiming otherwise -- read this
-before trusting anything below.** `unstick_hidden_outputs()` in `R/tutor_utils.R` (still in
-place, called once per module) was verified extensively via automated testing -- and then
-the user re-tested via RStudio's "Run Document" button and in their own regular browser and
-saw **zero change**: buttons still completely non-functional. This was re-confirmed, not a
-fluke. The automated-testing verification below is real (it did happen, the fix does work
-under those specific conditions) but evidently does not reflect the app's actual real-world
-behavior, for a reason that hasn't been identified yet. See
-`debug_recalculating_bug/HANDOFF.md` for the full, current writeup and the open questions --
-that file is now the source of truth for this bug, not this section. The two things most
-worth checking next: (1) has anyone actually run `Rscript R/run_tutorial.R` and then opened
-the result in a real, non-automated browser (as opposed to either RStudio's "Run Document" OR
-an automated testing tool -- that exact combination has never been tried), and (2) is
-`tutorial.storage` actually `"none"` inside the RStudio session that's failing, or could that
-session predate the `.Rprofile` change and still be using stale/default storage. A
-`grading_progress_indicator_css()` CSS-only loading-message fix was also added and then
-**removed** after the user reported it displaying before the exercise could even be
-submitted -- confirming the output frame is stuck in `.recalculating` from page load in their
-environment, i.e. the original bug, not a delay.
+**RESOLVED: the "quiz questions and exercise buttons don't work" bug that dominated most of
+this project's debugging history is fixed, via a rewrite, not a patch.** Root cause: a
+client-side interaction-binding bug in `learnr`'s own dynamic quiz/exercise UI
+(`learnr::question()` and `exercise=TRUE`/gradethis) -- confirmed, via a wire-level Shiny
+trace against a real deployed server (see `debug_recalculating_bug/HANDOFF.md` for the full
+investigation), that the server always renders and sends the right content correctly, the
+browser displays it correctly, but the client-side step that's supposed to make freshly
+inserted content clickable never takes effect, in every real user browser tested (Chrome,
+Edge; both localhost and a real Posit Connect Cloud deployment) -- and never in the
+automated testing harness used throughout most of this investigation, which is why it went
+undiagnosed for so long. Multiple attempted server-side patches (`unstick_hidden_outputs()`
+and others) genuinely fixed what they targeted but did not fix this, because the real bug is
+one layer further down the pipeline (client-side input binding), not anything server-side.
 
-The rest of this section is kept as a record of what was tried and what Path-A (automated)
-testing showed -- treat it as unverified for the app's real usage until the discrepancy above
-is resolved.
+**The fix:** Modules 1-3 no longer use `learnr::question()` or `exercise=TRUE`/gradethis at
+all. Both were replaced with plain, statically-declared Shiny inputs
+(`radioButtons()`/`actionButton()`/`textAreaInput()`), which only need Shiny's normal
+one-time page-load binding -- the same mechanism the identity modal's `textInput`/
+`actionButton` had relied on the entire time without ever failing, which was the concrete
+clue that motivated this approach. Shared helpers live in `R/tutor_utils.R`:
+- `quiz_question_ui()`/`quiz_question_server()` -- replaces `question()`. Takes a named
+  `choices` vector (label -> internal ID) and a `feedback` list (ID -> `list(correct=,
+  message=)`).
+- `exercise_ui()`/`exercise_server()` -- replaces an `exercise=TRUE` chunk plus its
+  `*-check`/`*-error-check` gradethis chunks. A plain `textAreaInput()` stands in for
+  learnr's ace.js code editor (a deliberate simplification, not a general-purpose editor
+  replacement -- fine for this course's short exercises). Evaluates the submitted code via
+  `eval(parse(text = user_code), envir = new.env())` in a fresh environment, so grading
+  logic can inspect intermediate variables the student created (not just the final printed
+  value -- needed for Module 3's cumulative exercise, which checks that `prices`/`tax_rate`
+  exist) and so genuine syntax errors are caught the same way a real R console would show
+  them. `evaluate_fn` is always called as `(user_code, result, envir, stage)`; each module's
+  existing `evaluate_*()` grading functions are unchanged, just wrapped in a small inline
+  closure matching that fixed signature (they each had a different, narrower signature
+  before). DB logging (`log_attempt_and_maybe_open_chat()`) and tutor chat wiring
+  (`wire_tutor_chat()`) are completely unchanged -- only how the UI is declared and grading
+  is invoked changed, not the grading logic, DB schema, or tutor chat behavior itself.
 
-**Root cause:** Shiny's `session$clientData$output_<id>_hidden` flag, which tracks whether a
-given output is currently visible, never flips back to `FALSE` for an output that was bound
-while its containing `##` topic was still hidden by learnr's `progressive: true` topic
-switching (learnr hides inactive topics via jQuery show/hide, and whatever visibility
-re-detection Shiny normally relies on -- e.g. `IntersectionObserver` -- never fires for that
-transition in this combination). Confirmed directly: a `session$clientData` dump observer
-showed the hidden flag stuck at `TRUE` for a quiz's outputs even while that quiz's topic was
-the actively-displayed one on screen, and a `shiny:bound`/`shiny:recalculating`/
-`shiny:recalculated`/`shiny:value` lifecycle listener showed the output gets `shiny:bound`
-once and nothing else, ever. Since Shiny's `shouldSuspend()` reads that stale `hidden=TRUE`
-forever, it permanently blocks the output's first real render -- this is what
-`outputOptions(..., suspendWhenHidden = FALSE)` (a real, documented Shiny option -- see the
-"Explicit vs. implicit output registration" note below for the correction of an earlier wrong
-claim that this option didn't work) is designed to override.
+`unstick_hidden_outputs()` is kept in every module (harmless, still relevant: the quiz/
+exercise *feedback* messages are still ordinary `renderUI()` outputs, which remain subject
+to the separate suspend-while-hidden mechanism this function works around).
+`warm_up_exercise_renderer()` was removed from Modules 1-3 along with gradethis, since
+nothing left in those modules uses `learnr:::render_exercise()` anymore.
 
-**Why a simple fix didn't work directly:** `outputOptions()` requires the target output to
-already be registered, but learnr registers most quiz/exercise sub-outputs (a question's
-`message_container`/`action_button_container`, an exercise's own output frame) *lazily*,
-well after session start -- calling `outputOptions()` on them too early throws `"<id> is not
-in list of output objects"` and crashes the whole session (confirmed empirically). The fix:
-`unstick_hidden_outputs(output, session)` watches `session$clientData`'s `output_*_hidden`
-keys (which reliably appear the instant each dynamic output binds, regardless of whether it's
-hidden) on a 200ms timer, and calls `outputOptions(..., suspendWhenHidden = FALSE)` on each
-newly-seen output exactly once. This is fully generic -- no per-module/per-exercise label
-list to maintain -- and patches every quiz and exercise output in the session, not just one.
+**Verified end-to-end for all three modules**, both locally and on a real deployment
+(Posit Connect Cloud -- see "Deployment target" below, now updated): identity capture (incl.
+a real DB-connection-failure error path, see below), every quiz question, every exercise's
+fail/error/pass/Start-Over paths (including Module 3's cumulative exercise, which
+deliberately starts from genuinely malformed R syntax), tutor chat auto-open-on-fail, and
+real Postgres attempt logging with no errors in the server console. Confirmed by the app
+owner directly, in their own real browser, on the deployed module 1 app, before modules 2-3
+were rewritten the same way.
 
-**False leads ruled out along the way** (kept here so this isn't re-investigated):
-- Not a `tutorial.storage` issue. `tutorial.storage = "none"` (set to fix the *separate*,
-  real local-filesystem-collision bug -- see the gotcha further below) was suspected at one
-  point since removing it appeared to fix the bug in one test run -- but a clean, controlled
-  retest (single server process, storage explicitly set to `"auto"`/`"client"`/a custom
-  per-PID `filesystem_storage()`) reproduced the exact same stuck-recalculating symptom
-  regardless of storage backend. That one successful-looking run was a red herring (likely a
-  timing/race artifact from several concurrent R processes competing for CPU at the time, not
-  a real fix). `tutorial.storage = "none"` stays in place -- it's still the correct fix for
-  the collision bug -- and `unstick_hidden_outputs()` was confirmed working under it.
-- Not the Shiny `.recalculating`-class-on-bind behavior change alone, not
-  [rstudio/shiny#4406](https://github.com/rstudio/shiny/issues/4406)'s boxless-ancestor
-  `IntersectionObserver` bug (no `display:contents` ancestor exists in this app's real DOM
-  chain, and the documented `min-width`/`min-height` workaround didn't fix it here), and not
-  [[rstudio/shiny#4373]] resume-after-hidden territory -- all plausible given the observed
-  symptoms, but none of the targeted fixes for those specific issues resolved it. The eventual
-  fix works at a different layer (forcing `suspendWhenHidden = FALSE`) rather than fixing
-  whatever specifically breaks the hidden-flag update, so the exact underlying Shiny/learnr
-  incompatibility causing `output_*_hidden` to never update is still not pinned down -- only
-  worth chasing further if a future Shiny/learnr upgrade needs `unstick_hidden_outputs()`
-  revisited.
-- Downgrading `shiny` below 1.9.0 was tried and abandoned: it dodges this bug but `shinychat`
-  (tutor chat) hard-requires `shiny >= 1.10.0` and refuses to load below it, so no version
-  satisfies both. Not needed now that the real fix is in place; shiny stays on 1.14.0.
+**Also fixed along the way: the identity-capture `observeEvent` had no error handling**,
+so any DB connection failure (bad/missing env vars, network issue) threw uncaught and
+crashed the entire Shiny session -- surfaced to the student as a bare "disconnected from
+server" with zero indication of the actual cause. This is exactly what happened on the
+first Connect Cloud deploy attempt (env vars hadn't propagated yet). Now wrapped in
+`tryCatch()`, showing the real error message in a modal with a "Try again" button instead.
 
-**Verified against the live app, post-fix** (all three modules, real Supabase DB, real
-gradethis grading, not just the isolated `debug_recalculating_bug/repro.Rmd` repro): Module
-1's `name-exercise` (both fail and pass paths), Module 2's `comment-exercise` and
-`fix-the-bug-exercise` (including the error-check path, and tutor chat auto-open + greeting
-on a failed attempt), and Module 3's `vectors-exercise` and `cumulative-exercise` (including
-its starting syntax-error path) -- plus quiz questions on topics beyond the first (Module 1's
-install-walkthrough quizzes) -- all render and grade correctly with the fix in place, with
-zero code changes to storage settings.
+**Deployment infrastructure added:** `deploy/module_1/`, `deploy/module_2/`,
+`deploy/module_3/` are self-contained, flattened copies of each module (`.Rmd` at the
+folder root, `R/` subfolder alongside it, `source("R/...")` instead of `source("../R/...")`)
+with a generated `manifest.json` each, specifically for Posit Connect Cloud deployment.
+**Why the flattening was necessary:** `rsconnect::writeManifest()`'s app-type
+auto-detection (`inferAppMode()`) only scans files at the app directory's *root* -- an
+`.Rmd` nested in a `tutorials/` subfolder (matching this project's normal layout) is
+invisible to it and falls through to `appmode: "static"`, which Connect Cloud will not even
+offer as a primary-file candidate. **These `deploy/` copies must be regenerated any time the
+corresponding `tutorials/*.Rmd` or `R/*.R` file changes** -- they are not symlinks, they're
+plain copies with one line difference (`source()` path). Regenerate via
+`rsconnect::writeManifest(appDir = "deploy/module_N", appPrimaryDoc = "module_N.Rmd")`
+after copying the updated files in (see recent commit history for the exact copy+sed
+pattern used). Each Connect Cloud deployment needs its own copies of the four `.Renviron`
+variables (`SUPABASE_DB_HOST`, `SUPABASE_DB_USER`, `SUPABASE_DB_PASSWORD`,
+`ANTHROPIC_API_KEY`) set in its own dashboard settings -- they are deliberately not in git
+and don't propagate from `.Renviron` automatically.
 
-**Diagnostic artifacts** (`debug_recalculating_bug/HANDOFF.md`, `debug_recalculating_bug/
-repro.Rmd`) are left in place as a record of the investigation but are not part of the
-production app and don't need to be kept in sync going forward.
+**Diagnostic artifacts** (`debug_recalculating_bug/`) are kept as a full record of the
+investigation (the false leads, the wire-trace methodology, the eventual root-cause finding)
+but are no longer relevant to ongoing work -- the bug they document is fixed by the
+architectural change above, not by anything in that folder.
 
-**A second-order finding turned out to be a red herring and its fix was reverted.** After the
-`unstick_hidden_outputs()` fix, automated (Path A) testing found a real but separate ~9-10
-second cold-start delay on a fresh R process's first exercise submission (traced to
-`rmarkdown`/`knitr` warm-up cost inside `learnr:::render_exercise()`), and added
-`warm_up_exercise_renderer()` (still in place -- harmless, and does measurably help this
-specific delay) plus a `grading_progress_indicator_css()` loading message (**removed**) to
-address it. When the user reported "still having the issue" a second time, it became clear
-this cold-start delay was NOT what they were experiencing -- the app owner reported the
-loading message appearing before the exercise could even be submitted, meaning the output
-frame was stuck in `.recalculating` from page load, not mid-submission. The CSS message was
-actively misleading in that state (implying grading was in progress when nothing had been
-submitted) and was removed. `warm_up_exercise_renderer()` was left in place since it's
-harmless and unrelated to the real, still-unresolved bug -- see `debug_recalculating_bug/
-HANDOFF.md`.
+Modules 1-3 are all fully built and tested end-to-end, in the same content style: identity
+capture -> instructional/quiz content -> gated exercise(s), each backed by an
+always-available tutor chat panel that auto-opens on a failed attempt. Module 1's one
+exercise (`module1_name_check`), Module 2's two (`module2_comment_out`, `module2_fix_error`),
+and Module 3's four (`module3_assignment`, `module3_vectors`, `module3_fix_comparison`,
+`module3_cumulative` -- the first module built under the exercise-scaling convention below,
+including its first cumulative exercise) all share the same wiring --
+`wire_tutor_chat()`, `log_attempt_and_maybe_open_chat()`, `bs5_theme_dependencies()`,
+`quiz_question_ui()`/`quiz_question_server()`, `exercise_ui()`/`exercise_server()` all live
+once in `R/tutor_utils.R`; only each exercise's own `evaluate_<exercise>()` grading logic
+and each quiz's own choices/feedback text differ per module. `exercises.learning_objective`
+is set for all seven exercise rows in Supabase.
 
-Modules 1-3 are all fully built and tested end-to-end, in the same style: identity capture ->
-instructional/quiz content -> gated exercise(s), each backed by an always-available tutor
-chat panel that auto-opens on a failed attempt. Module 1's one exercise
-(`module1_name_check`), Module 2's two (`module2_comment_out`, `module2_fix_error`), and
-Module 3's four (`module3_assignment`, `module3_vectors`, `module3_fix_comparison`,
-`module3_cumulative` -- the first module built under the updated "exercise count/difficulty
-scales with the module" convention, including its first cumulative exercise) all share the
-exact same wiring -- `wire_tutor_chat()`, `log_attempt_and_maybe_open_chat()`, and
-`bs5_theme_dependencies()` live once in `R/tutor_utils.R` and are called identically from
-each module's `setup`/`context="server"` chunks; only each exercise's own
-`evaluate_<exercise>()` grading logic differs. `exercises.learning_objective` is set for all
-seven exercise rows in Supabase (schema, Module 1-3 rows, and all exercise rows confirmed
-live).
+A real back-and-forth tutor conversation has been verified for all three modules (both
+directions confirmed in `chat_logs`) -- responses correctly reference the student's actual
+submission, give guiding next steps without leaking answers, and build on the student's own
+follow-ups, consistent with the system prompt's escalation/non-leaking design. The tutor
+chat greeting (`TUTOR_CHAT_GREETING`, pushed via `chat_set_greeting()` after every
+`chat_clear()` in `wire_tutor_chat()`'s `refresh_chat()`) is confirmed working on every
+module.
 
-Verified against the live app (via `rmarkdown::run()` + a browser, not just code review, for
-ALL THREE modules): identity modal + DB write, progressive gating (submitting is required
-before "Continue" unlocks -- confirmed both the blocked and unblocked cases), and for every
-graded exercise the full button set -- Run Code, Submit Answer both failing and passing, AND
-Start Over tested separately after a failing attempt and after a passing attempt (per the
-"Testing convention" above) -- confirmed the editor resets to starting code correctly both
-times, with DB attempt logging (`exercise_attempts`, correct `student_id`/`exercise_id`) and
-tutor chat auto-open behaving correctly throughout. A real back-and-forth tutor conversation
-has now been verified for all three modules (both directions confirmed in `chat_logs`) --
-Module 3's `module3_assignment` exchange correctly referenced the student's actual failed
-submission (identified `FIXME` as the problem from the fed-in context, not a generic guess),
-gave a guiding next step without stating the exercise's actual answer values, and correctly
-affirmed + built on the student's own follow-up proposal in the second turn -- consistent
-with the system prompt's escalation/non-leaking design.
-
-**Fixed: the tutor chat greeting was silently never (re)appearing after the first page
-load, on any module.** Root cause: `chat_ui(greeting = ...)` only sets a *static* greeting
-shown on that widget's very first render. `shinychat::chat_clear(chat_id, greeting = TRUE,
-session = session)` -- called every time `wire_tutor_chat()`'s `refresh_chat()` runs, i.e.
-every single time a panel opens -- does NOT redisplay it; in shinychat 0.5.0 that flag just
-resets the panel to blank and makes the *client* fire a `<chat_id>_greeting_requested` Shiny
-input event asking the server to supply one. Nothing in this app ever listened for that
-event, so the greeting stayed null forever after the first load (note: `.shiny-chat-greeting`
-is its own DOM element, separate from `.shiny-chat-messages-content` -- checking the wrong
-one looks identical to the greeting being missing). Fix: `TUTOR_CHAT_GREETING` (a shared
-constant in `R/tutor_utils.R`) is now used both as `chat_ui()`'s static `greeting =` value
-*and* pushed explicitly via `shinychat::chat_set_greeting(chat_id, TUTOR_CHAT_GREETING,
-session = session)` right after every `chat_clear()` call inside `refresh_chat()` -- this is
-the documented way to (re)send a greeting from the server, not a workaround. Fixed once in
-the shared `wire_tutor_chat()`, so it applies to all modules; live-verified on Module 3
-(auto-open, manual open, and a full follow-up conversation afterward all confirmed correct)
-and spot-checked on Modules 1-2 (greeting confirmed rendering correctly on Module 1's one
-exercise and both of Module 2's) -- Modules 1-2 weren't re-tested for the full auto-open/
-conversation/DB-logging flow post-fix, but that wiring is unchanged by this fix and was
-already verified pre-fix, so a manual-open greeting check was sufficient here.
-
-**Module 1 install section rewritten -- was a passive fact-list, is now an actual guided
-walkthrough.** User feedback: "Installing R and RStudio" originally just told students facts
-("R and RStudio are two different pieces of software...") without ever walking them through
-doing it. Rewritten into three `###` steps under that same `##` topic -- Step 1 (install R
-from CRAN, with concrete Windows/Mac click-by-click instructions), Step 2 (install RStudio
-from posit.co, same level of concreteness), Step 3 (open RStudio, verify via typing `2 + 2`
-in the Console) -- each ending in its own checkpoint `question()`, matching what the user
-asked for ("a multi step quiz that walks through steps"). Explicitly tells students up front
-that this tutorial can't see their computer or verify their install directly (unlike later
-modules' exercises, which run in-browser) -- Step 3's console check is the closest thing to
-a real verification this format can offer. Rendered cleanly (`rmarkdown::render`, no errors,
-all new quiz chunk labels unique) and content-verified by fetching the live server's HTML
-directly (`curl`, bypassing the browser) -- but NOT yet click-tested in an actual browser
-session; see the environment note below for why.
-
-**UNRESOLVED this session: could not get a reliable live-browser verification signal at
-all, for any module, late in this working session -- this is a tooling problem, not a
-content or app problem.** While re-verifying Module 1's exercise buttons after the
-`tutorial.storage` fix, Run Code/Submit Answer showed the same stuck-`disabled`,
-never-responds symptom the user reported -- but a direct A/B check (switching the exact same
-browser session to Module 3, which had been fully click-verified working earlier this same
-session) showed the *identical* stuck symptom there too, at the same time. Since one
-codebase can't be simultaneously broken and proven-working, this points at the browser
-automation session itself having degraded after a very long testing run, not at either
-module's code -- this same category of environment flakiness (session-wide, resolved by a
-full pane restart) was already seen and worked around once before, during Module 3's initial
-testing. Didn't chase it further this time to avoid repeating that multi-hour detour; a fresh
-`R/run_tutorial.R` + browser session (or the user's own RStudio) is the next real test of
-whether Module 1's buttons work post-fix, not a repeat of this session's browser pane.
-
-**Tutor chat / bslib retrofit history:** Module 2 needed several fixes not anticipated in
-earlier planning -- see "Key conventions" above (BS5 theming, `*-error-check` chunks, the
-setup-chunk-shared-function pattern for grading logic, and the deprecation of
-`chat_mod_ui()`/`chat_mod_server()`). Module 1 was retrofitted to match once the pattern was
-proven out, and the shared wiring was extracted into `R/tutor_utils.R` at the same time so
-Modules 3-5 reuse it rather than re-copying it per module.
-
-**Module 3 build notes:** first module written under the updated exercise-scaling convention
-(see "Key conventions") -- four graded exercises (three targeted + one cumulative) instead of
-1-2, mixing "fix this" and "make this output" formats, with the cumulative exercise
-deliberately starting from code with real (parseable-by-R-error, not just logically wrong)
-syntax errors to reinforce Module 2's error-reading skill. Two new gotchas surfaced during
-live testing and are now documented above for Modules 4-5: the bare-`___`-placeholder R
-syntax trap (fixed by switching to `FIXME`), and learnr's per-OS-user server-side `.rds`
-progress cache, which can look exactly like a broken Run Code/Submit Answer button during
-local iteration if not cleared.
+Module 1's "Installing R and RStudio" section is a real guided walkthrough (three `###`
+steps -- install R, install RStudio, verify via `2 + 2` in the Console -- each with its own
+checkpoint quiz), not a passive fact list.
 
 **Next actions, in order:**
 1. Modules 4-5 follow the same established pattern -- source `R/tutor_utils.R`, call
-   `bs5_theme_dependencies()` + `wire_tutor_chat()` for any exercise, write only the
+   `bs5_theme_dependencies()` + `wire_tutor_chat()` for any exercise,
+   `quiz_question_ui()`/`quiz_question_server()` for quizzes, `exercise_ui()`/
+   `exercise_server()` for graded exercises (NOT `learnr::question()`/`exercise=TRUE`/
+   gradethis -- see the note at the top of "Key conventions" above), write only the
    exercise-specific `evaluate_<exercise>()` grading function per module, and size the
-   exercise count/complexity per the updated scaling convention rather than Module 1/2's
-   count.
-2. Instructor dashboard, once there's real attempt/chat data to build it against.
+   exercise count/complexity per the scaling convention above rather than Module 1/2's
+   original (pre-rewrite) count.
+2. When each new module is ready, add a matching self-contained copy under `deploy/` with
+   its own `manifest.json`, following the Modules 1-3 pattern, and deploy it to Connect
+   Cloud the same way.
+3. Instructor dashboard, once there's real attempt/chat data to build it against.
