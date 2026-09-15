@@ -22,12 +22,18 @@ LLM-provided scripts, not write substantial code from scratch.
 
 ## Deployment target
 Posit Connect Cloud (connect.posit.cloud), deploying directly from the GitHub repo
-(sarahswaff/rtutor) -- each module is deployed as its own separate "content" item, pointed
-at its own self-contained folder under `deploy/` (see "Current status" below for why a
-separate, flattened `deploy/` copy exists per module rather than deploying `tutorials/`
-directly). Each deployment needs its own copy of the four `.Renviron` variables
-(`SUPABASE_DB_HOST`, `SUPABASE_DB_USER`, `SUPABASE_DB_PASSWORD`, `ANTHROPIC_API_KEY`) set in
-its own Connect Cloud dashboard settings.
+(sarahswaff/rtutor). The Free plan caps published apps at 5 (Basic is $19/mo for 25,
+confirmed on the plans page) -- each piece of content is deployed as its own separate
+"content" item, pointed at its own self-contained folder under `deploy/` (see "Current
+status" below for why a separate, flattened `deploy/` copy exists per app rather than
+deploying `tutorials/`/`instructor_dashboard/` directly). The student tutorial is
+`deploy/course/` (Modules 1-5 merged into one app -- see "Merged course tutorial" below;
+the original `deploy/module_1`...`module_5` still exist and still work but are slated for
+retirement once `deploy/course/` is verified in production), and the instructor dashboard
+is `deploy/instructor_dashboard/`. Each deployment needs its own copy of the relevant
+`.Renviron` variables (`SUPABASE_DB_HOST`, `SUPABASE_DB_USER`, `SUPABASE_DB_PASSWORD`,
+`ANTHROPIC_API_KEY` -- the dashboard doesn't need the last one) set in its own Connect
+Cloud dashboard settings.
 IMPORTANT: persistence lives in the external Postgres DB, never in local files -- this
 matters even more on a redeployed/restarted Connect Cloud instance than it did during local
 dev, since that filesystem is also ephemeral.
@@ -42,13 +48,15 @@ r-tutor-app/
 │   ├── db_utils.R      -- shared DB functions
 │   └── tutor_utils.R   -- ellmer tutor chat functions + system prompt
 ├── tutorials/
-│   ├── module_1.Rmd    -- DONE, tested end-to-end
-│   ├── module_2.Rmd    -- DONE, tested end-to-end
-│   ├── module_3.Rmd    -- DONE, tested end-to-end
-│   ├── module_4.Rmd    -- DONE, tested end-to-end (see "Current status" below)
-│   └── module_5.Rmd    -- DONE, tested end-to-end (see "Current status" below)
+│   ├── course.Rmd      -- CURRENT deployment target: Modules 1-5 merged into one app
+│   │                       (see "Merged course tutorial" below)
+│   ├── module_1.Rmd    -- superseded by course.Rmd; kept for reference/rollback
+│   ├── module_2.Rmd    -- superseded by course.Rmd; kept for reference/rollback
+│   ├── module_3.Rmd    -- superseded by course.Rmd; kept for reference/rollback
+│   ├── module_4.Rmd    -- superseded by course.Rmd; kept for reference/rollback
+│   └── module_5.Rmd    -- superseded by course.Rmd; kept for reference/rollback
 ├── student_app/         -- not yet built
-└── instructor_dashboard/ -- app.R, built and tested locally (see "Current status")
+└── instructor_dashboard/ -- app.R, built and tested locally (see "Instructor dashboard")
 ```
 
 ## Database schema (full DDL in schema.sql)
@@ -402,6 +410,130 @@ env vars in its own dashboard settings -- the three `SUPABASE_DB_*` vars (the da
 only reads the DB, never writes) plus the new `DASHBOARD_PASSWORD`. `ANTHROPIC_API_KEY` is
 not needed here; the dashboard never calls `tutor_utils.R`.
 
+## Merged course tutorial (`tutorials/course.Rmd`)
+Posit Connect Cloud's Free plan caps published apps at 5 -- confirmed live on the plans
+page (connect.posit.cloud/plans): Free = 5 applications, Basic ($19/mo) = 25, Enhanced
+($59/mo) = unlimited. Modules 1-5, each deployed as its own content item, already used all
+5 free slots, which is what blocked deploying the instructor dashboard as a 6th app. Rather
+than pay for Basic, Modules 1-5 were merged into a single learnr document,
+`tutorials/course.Rmd`, deployed as ONE Connect Cloud app -- freeing 4 slots permanently (1
+course + 1 dashboard = 2 used, 3 spare). The original `tutorials/module_1.Rmd`...
+`module_5.Rmd` and their `deploy/module_1`...`module_5` folders are kept as-is (rollback
+safety / historical reference), not deleted.
+
+**This was a mechanical merge of already-tested content, not a rewrite** -- every quiz's
+choices/feedback, every exercise's starting code and `evaluate_*()` grading logic, and the
+tutor chat system prompt are byte-for-byte unchanged from the per-module originals. What
+had to change, and why:
+- **Every `##` Topic heading is prefixed with its module** (`## Module 3: Vectors`, etc.).
+  Needed for two reasons: modules 2-5 all originally titled their first topic literally
+  `## Welcome back` (4 identical heading strings, which pandoc would auto-suffix but still
+  read confusingly in one combined sidebar), and a ~44-topic single sidebar with no module
+  labels would be very hard for a student to navigate. `###` sub-headings are untouched.
+- **`tutor_chat_N`/`tutor_accordion_N` are renumbered per module** as
+  `tutor_chat_m{module}_{i}` / `tutor_accordion_m{module}_{i}` (e.g. module 4's third
+  exercise: `tutor_chat_m4_3`/`tutor_accordion_m4_3`). Every module used to restart this
+  numbering at `_1`, which is harmless across 5 separate deployments but is a real Shiny
+  ID collision (up to 5-way) once concatenated into one page/session.
+- **The two `cumulative_exercise` collisions are renamed to be module-specific**:
+  module_3's exercise UI ID and its `evaluate_cumulative_exercise()` function became
+  `module3_cumulative_exercise` / `evaluate_module3_cumulative_exercise`; module_4's became
+  `module4_cumulative_exercise` / `evaluate_module4_cumulative_exercise`. These were the
+  only exercise/quiz ID and only `evaluate_*()` function name that collided across all 5
+  modules -- everything else was already unique.
+- **Only ONE identity-capture modal remains** (module 1's "Welcome!" wording, at the very
+  top), not 5 near-identical copies -- they all used the same unnamespaced
+  `student_name`/`submit_name` input IDs, so 5 concatenated copies would have multi-fired
+  one button click. `bs5_theme_dependencies()` is likewise called exactly once (module 1's
+  call; the other 4 were deleted), since it's a document-wide dependency injection, not a
+  per-module one.
+- **`fish_survey`/`fish_clean` are now built once, in module 4's setup chunk, and reused
+  by module 5** (which used to rebuild its own separate copy of `fish_clean` from scratch,
+  back when each module was an independent deployment with no way to share module 4's
+  actual object). Both `assign(..., envir = globalenv())`'d; module 5's redundant
+  reconstruction was deleted outright, not merely deduplicated -- it's the same data,
+  constructed identically, so there was nothing left to preserve.
+- **Each module's `setup`-labeled chunk was renamed to a unique label** (`setup-module1`
+  ... `setup-module5`, since knitr errors on duplicate chunk labels in one document) **and
+  given an explicit `context="setup"` attribute.** This is the one non-obvious gotcha that
+  actually broke the first working version of this merge, silently: shiny_prerendered's
+  special "runs once per session, before every other server chunk, and stays in scope for
+  all of them" behavior is tied to the chunk being named *exactly* `setup` -- renaming it to
+  `setup-module2` etc. without ALSO adding `context="setup"` explicitly causes that chunk to
+  fall back to the default `context="render"` (knit-time only), so every function it defines
+  (`evaluate_*()`, `mapping_label()`) and every object it creates (`fish_survey`,
+  `fish_clean`) silently vanishes by the time a live session's exercise-submit code tries to
+  call it -- caught locally as `Error in evaluate_name_exercise: could not find function
+  "evaluate_name_exercise"` the first time an exercise was submitted, not at render/knit
+  time, which is what made it non-obvious. Confirmed fixed by checking the rendered HTML's
+  `data-context` attributes (`context="setup"` chunks show up as `data-context="server-start"`
+  -- the correct, once-per-session-before-other-server-chunks semantic). **Any future chunk
+  that needs to behave like a `setup` chunk but can't literally be named `setup` (i.e., any
+  chunk after the first in a multi-module document like this one) needs `context="setup"`
+  stated explicitly -- the bare name is not enough.**
+
+**New feature added as part of this merge: a "welcome back" progress banner**, since one
+continuous course makes "where do I pick back up" a real question in a way 5 separate
+per-module links never were. `get_student_progress(con, student_id)` (`R/db_utils.R`,
+same file/rationale as the dashboard queries) returns exercises passed + the title of the
+first module (in module/exercise order) that isn't fully passed yet. Rendered as a plain
+`uiOutput("welcome_back_banner")` in Module 1's Welcome topic, computed inside the single
+identity-capture `observeEvent`, right after `get_or_create_student()` succeeds and before
+`dbDisconnect()`. A brand-new student (0 exercises passed) sees no banner -- identical to
+today's experience. **Deliberately NOT an automatic jump/scroll to that module** -- the
+banner just names it in plain text ("Pick up in Module 3: Data using the sidebar on the
+left") and the student clicks the real, unmodified sidebar themselves. This was a
+considered choice, not a shortcut: `learnr`'s Topic sidebar is a hand-rolled JS closure with
+no exported/internal R-level navigation API and no `receiveMessage` hook on its one Shiny
+input binding (confirmed by reading the installed `learnr` package's own JS and R
+namespace) -- the only way to auto-navigate would be injecting JS to synthetically click a
+sidebar link, which is the same class of undocumented-client-internals dependency that
+caused the original `learnr::question()`/`exercise=TRUE` rewrite (see "Current status"
+below). `options(tutorial.storage = ...)` was also considered and rejected for the same
+underlying reason: that setting only restores learnr's own native question/exercise state,
+which this project abandoned project-wide already, and it's browser-bound rather than
+identity-bound, which fights this project's actual DB-backed, name-based identity model.
+
+**A real, deliberate behavior change from merging:** students can now freely navigate to
+any module's Topics from the sidebar, including ones "ahead" of where they've actually
+gotten to -- previously, a student could only reach module N by having that module's own
+separate URL. Building a real hard gate across modules would require the same
+undocumented-sidebar-manipulation approach just ruled out for navigation above, so this was
+accepted rather than worked around: this is a self-paced pre-course-prep tool (per this
+file's stated Purpose), not a certification path, and a curious/ahead student previewing or
+revisiting content isn't a real problem worth that risk.
+
+**Verified locally end-to-end after the fix above** (`Rscript R/run_tutorial.R`, pointed at
+`course.Rmd`): identity modal appears exactly once; a brand-new student sees no welcome-back
+banner while a student with prior `exercise_mastery` rows sees the correct passed-count and
+correct next-module name; Module 1's exercise (fail -> tutor chat auto-open -> pass ->
+Start Over all confirmed), Module 2's `fix_the_bug_exercise`, Module 3's renamed cumulative
+exercise (error path, fail path, and pass path, confirming
+`evaluate_module3_cumulative_exercise` resolves correctly), Module 4's renamed cumulative
+exercise (confirming `fish_clean`/`dplyr` both resolve correctly via the session-start
+context), and Module 5's ggplot quiz + scatter exercise (confirming `fish_clean` correctly
+carries over from Module 4's setup chunk with no module-5-local reconstruction, and
+`has_plot_output` plot rendering still works). Cross-checked directly against
+`exercise_attempts` in Supabase afterward -- every test attempt logged against the correct
+`exercise_key`, in the correct pass/fail state, in the correct order. Not yet
+re-verified: the remaining untouched exercises/quizzes (unchanged content, lower risk since
+nothing about their IDs or logic was touched by the merge) and a full production deploy.
+
+**Deployment infrastructure added, following the exact per-module pattern:**
+`deploy/course/` is a flattened, self-contained copy (`course.Rmd` at the folder root,
+`R/db_utils.R` and `R/tutor_utils.R` alongside it, `source("R/...")` not `source("../R/...")`)
+with a generated `manifest.json`
+(`rsconnect::writeManifest(appDir = "deploy/course", appPrimaryDoc = "course.Rmd")`,
+confirmed `appmode: "rmd-shiny"`, primary doc `course.Rmd`). Regenerate the same way any
+time `tutorials/course.Rmd`, `R/db_utils.R`, or `R/tutor_utils.R` changes. Needs the same
+four `.Renviron` variables as every other tutorial deployment
+(`SUPABASE_DB_HOST`/`SUPABASE_DB_USER`/`SUPABASE_DB_PASSWORD`/`ANTHROPIC_API_KEY`) set in
+its own Connect Cloud dashboard settings. **Manual follow-up, not done as part of this
+work**: create the Connect Cloud content item for `deploy/course/`, verify it there, and
+only then decide when to retire the 5 old per-module Connect Cloud deployments and switch
+whatever link students are given over to the new one -- that's a rollout-timing call (it
+affects currently-enrolled students' bookmarked links), not a technical one.
+
 
 ## Current status / immediate next step
 
@@ -544,10 +676,18 @@ future module:
 
 **Next actions, in order:**
 1. DONE: Modules 4 and 5 are deployed to Connect Cloud.
-2. `R/run_tutorial.R`'s `MODULE_FILE` is currently set to `"module_5.Rmd"` (last module
-   tested locally) -- change it to whichever module you're actively working on.
-3. Instructor dashboard is built and tested locally (see "Instructor dashboard" above).
-   Remaining: push `deploy/instructor_dashboard/` to Connect Cloud as its own content item
-   (set the three `SUPABASE_DB_*` vars plus `DASHBOARD_PASSWORD` in its dashboard settings),
-   then get real usage from the instructor to see if the three tabs actually answer the
-   questions they ask day-to-day, or need adjusting.
+2. DONE: Instructor dashboard built and tested locally (see "Instructor dashboard" above).
+3. DONE: Modules 1-5 merged into one tutorial, `tutorials/course.Rmd` (see "Merged course
+   tutorial" above), to free up Connect Cloud app slots for the dashboard. Verified locally
+   end-to-end. `R/run_tutorial.R`'s `MODULE_FILE` now defaults to `"course.Rmd"`.
+4. Remaining, both needing the Connect Cloud dashboard (not done as part of this work):
+   - Push `deploy/course/` as its own new content item, verify it in production, then
+     decide when to retire the 5 old per-module deployments and update whatever link
+     students are given.
+   - Push `deploy/instructor_dashboard/` as its own content item (set the three
+     `SUPABASE_DB_*` vars plus `DASHBOARD_PASSWORD` in its dashboard settings), then get
+     real usage from the instructor to see if its three tabs actually answer the questions
+     they ask day-to-day, or need adjusting.
+5. Chat transcript viewer + help-type categorization for the instructor dashboard --
+   discussed but paused pending two open design questions (classification timing, category
+   taxonomy). Revisit when picking dashboard work back up.

@@ -1,0 +1,2122 @@
+---
+title: "R Tutor: A Guided Introduction to R and RStudio"
+output:
+  learnr::tutorial:
+    progressive: true
+    allow_skip: false
+    theme: !expr bslib::bs_theme(version = 5, bootswatch = "cerulean")
+runtime: shiny_prerendered
+---
+
+```{r setup-module1, context="setup", include=FALSE}
+library(learnr)
+library(shiny)
+library(DBI)
+library(RPostgres)
+library(bslib)
+library(shinychat)
+library(ellmer)
+library(promises)
+
+# Shared database helper functions (get_con, get_or_create_student,
+# get_exercise_id, log_attempt, log_chat, get_student_progress)
+source("../R/db_utils.R")
+# Tutor chat context assembly, start_tutor_chat(), the shared
+# bs5_theme_dependencies()/wire_tutor_chat()/log_attempt_and_maybe_open_chat()
+# wiring, and the quiz_question_ui()/quiz_question_server() helpers used
+# below in place of learnr::question() -- see their definitions in
+# R/tutor_utils.R for why.
+source("../R/tutor_utils.R")
+
+# Grading logic for this module's one exercise. Unchanged from the
+# gradethis-based version -- only how it's *called* changed (see the
+# "Wrapping up" topic below), not the grading logic itself.
+evaluate_name_exercise <- function(result, stage) {
+  passed <- TRUE
+  feedback_message <- "Nice -- that's exactly right! Your response has been recorded."
+
+  if (is.null(result) || !is.character(result) || nchar(trimws(result)) == 0) {
+    passed <- FALSE
+    feedback_message <- if (identical(stage, "error_check")) {
+      "That code doesn't run as-is -- check that your name is wrapped in matching quotation marks."
+    } else {
+      "Make sure to type your name inside quotation marks."
+    }
+  } else if (identical(trimws(result), "___")) {
+    passed <- FALSE
+    feedback_message <- "Looks like the placeholder is still there -- replace `___` with your own name."
+  }
+
+  list(passed = passed, message = feedback_message)
+}
+```
+
+```{r, context="server"}
+# --- Identity capture -------------------------------------------------
+# Every tutorial session starts by asking for a name. This is a
+# deliberately simple stand-in for real identity -- no roster/Canvas
+# matching yet. The resulting student_id is stored on session$userData,
+# which is the safe, session-scoped place to keep it so that exercise
+# checking code (which runs in a more isolated context) can still reach
+# it via shiny::getDefaultReactiveDomain().
+#
+# Also computes the "welcome back" progress banner (below, in the Module 1
+# Welcome topic) for a returning student -- see get_student_progress() in
+# R/db_utils.R. A brand-new student (0 exercises passed) sees no banner.
+
+showModal(modalDialog(
+  title = "Welcome!",
+  "Please enter your name to begin this tutorial.",
+  textInput("student_name", label = NULL, placeholder = "Your name"),
+  footer = actionButton("submit_name", "Start Tutorial"),
+  easyClose = FALSE
+))
+
+observeEvent(input$submit_name, {
+  req(input$student_name)
+  tryCatch({
+    con <- get_con()
+    sid <- get_or_create_student(con, trimws(input$student_name))
+    progress <- get_student_progress(con, sid)
+    dbDisconnect(con)
+
+    session$userData$student_id <- sid
+    removeModal()
+
+    if (progress$exercises_passed > 0) {
+      output$welcome_back_banner <- renderUI({
+        message_text <- if (is.na(progress$next_module_title)) {
+          sprintf(
+            "Welcome back! You've completed all %d exercises -- great work!",
+            progress$total_exercises
+          )
+        } else {
+          sprintf(
+            "Welcome back! You've completed %d of %d exercises. Pick up in %s using the sidebar on the left.",
+            progress$exercises_passed, progress$total_exercises, progress$next_module_title
+          )
+        }
+        tags$div(class = "alert alert-info", message_text)
+      })
+    }
+  }, error = function(e) {
+    showModal(modalDialog(
+      title = "Couldn't connect",
+      paste("There was a problem saving your name (database error):", conditionMessage(e)),
+      footer = actionButton("submit_name", "Try again"),
+      easyClose = FALSE
+    ))
+  })
+})
+```
+
+```{r, context="server"}
+# --- Tutor chat wiring --------------------------------------------------
+# Always-available (collapsed by default) tutor chat panel for the one
+# graded exercise. See wire_tutor_chat() in R/tutor_utils.R.
+
+wire_tutor_chat("module1_name_check", "tutor_chat_m1_1", "tutor_accordion_m1_1", "Ask the Tutor", input, output, session)
+```
+
+```{r, context="server"}
+# --- Fix for quiz/exercise feedback outputs getting stuck "recalculating"
+# if bound while their topic is hidden -- see unstick_hidden_outputs() in
+# R/tutor_utils.R. Kept as a safety net even though the quiz/exercise
+# controls themselves are now plain static Shiny inputs (see below):
+# the *feedback* messages are still ordinary renderUI() outputs, which
+# are still subject to this specific suspend-while-hidden mechanism.
+unstick_hidden_outputs(output, session)
+```
+
+```{r, context="server"}
+# --- Quiz question wiring ------------------------------------------------
+# See quiz_question_ui()/quiz_question_server() in R/tutor_utils.R for why
+# these replace learnr::question() (a client-side interaction-binding bug
+# in learnr's own dynamic quiz UI, confirmed via a wire-level trace against
+# a real deployed server -- see debug_recalculating_bug/HANDOFF.md).
+
+quiz_question_server(input, output, session, "install_quiz", list(
+  wrong_replaces = list(correct = FALSE, message = "Not quite -- RStudio needs R installed underneath it."),
+  correct = list(correct = TRUE, message = "Correct!"),
+  wrong_unrelated = list(correct = FALSE, message = "They're closely related -- RStudio is built specifically to work with R.")
+))
+
+quiz_question_server(input, output, session, "install_r_quiz", list(
+  wrong_delete = list(correct = FALSE, message = "You need to actually run it to install R -- downloading alone doesn't install anything."),
+  correct = list(correct = TRUE, message = "Correct!"),
+  wrong_rename = list(correct = FALSE, message = "Renaming a file doesn't change what it is -- this installs R, not RStudio, regardless of its name.")
+))
+
+quiz_question_server(input, output, session, "install_rstudio_quiz", list(
+  wrong_same = list(correct = FALSE, message = "RStudio is only an interface -- it needs an actual R installation underneath it to run any code."),
+  correct = list(correct = TRUE, message = "Correct!"),
+  wrong_autoinstall = list(correct = FALSE, message = "RStudio doesn't install R on its own -- the two are downloaded and installed as separate steps.")
+))
+
+quiz_question_server(input, output, session, "first_check_quiz", list(
+  wrong_broken = list(correct = FALSE, message = "RStudio itself is very unlikely to be the problem here -- it's almost always about what it's trying to connect to."),
+  correct = list(correct = TRUE, message = "Correct!"),
+  wrong_mathpkg = list(correct = FALSE, message = "Basic arithmetic works in R with no extra packages -- this isn't a missing-package problem.")
+))
+
+quiz_question_server(input, output, session, "panes_quiz", list(
+  wrong_source = list(correct = FALSE, message = "Not quite -- try again."),
+  wrong_console = list(correct = FALSE, message = "Not quite -- try again."),
+  wrong_env = list(correct = FALSE, message = "Not quite -- try again."),
+  correct = list(correct = TRUE, message = "Correct!")
+))
+
+quiz_question_server(input, output, session, "wd_quiz", list(
+  wrong_speed = list(correct = FALSE, message = "Not related to speed."),
+  correct = list(correct = TRUE, message = "Correct!"),
+  wrong_packages = list(correct = FALSE, message = "Packages install fine either way.")
+))
+```
+
+```{r, context="server"}
+# --- "Quick system check" exercise ---------------------------------------
+# Plain Shiny replacement for the gradethis exercise=TRUE chunk (same
+# client-side interaction-binding issue as the quizzes above). A plain
+# textAreaInput() stands in for the ace.js code editor learnr normally
+# provides -- a deliberate simplification for this trivial one-line
+# exercise, not a general-purpose code editor replacement.
+
+observeEvent(input$name_exercise_reset, {
+  updateTextAreaInput(session, "name_exercise_code", value = '"___"')
+  output$name_exercise_feedback <- renderUI(NULL)
+})
+
+observeEvent(input$name_exercise_submit, {
+  user_code <- input$name_exercise_code
+  parsed_result <- tryCatch(eval(parse(text = user_code)), error = function(e) e)
+  is_error <- inherits(parsed_result, "error")
+  stage <- if (is_error) "error_check" else "check"
+  eval_result <- evaluate_name_exercise(if (is_error) NULL else parsed_result, stage)
+
+  student_id <- session$userData$student_id
+  log_attempt_and_maybe_open_chat(
+    "module1_name_check", student_id, user_code,
+    eval_result$passed, eval_result$message, "tutor_accordion_m1_1", session
+  )
+
+  output$name_exercise_feedback <- renderUI({
+    tagList(
+      tags$pre(if (is_error) {
+        paste("Error:", conditionMessage(parsed_result))
+      } else {
+        paste(utils::capture.output(print(parsed_result)), collapse = "\n")
+      }),
+      tags$div(
+        class = if (eval_result$passed) "alert alert-success" else "alert alert-danger",
+        eval_result$message
+      )
+    )
+  })
+})
+```
+
+## Module 1: Welcome
+
+```{r, echo=FALSE}
+bs5_theme_dependencies()
+```
+
+```{r, echo=FALSE}
+uiOutput("welcome_back_banner")
+```
+
+This tutorial is the first step before we get into any real course material. The goal here isn't to make you a programmer -- it's to make sure you're comfortable with R and RStudio as tools, so that later material (which may come from your instructor or from an AI assistant) doesn't feel unfamiliar.
+
+Nothing in this module involves writing real R code yet -- that starts in Module 2.
+
+## Module 1: Installing R and RStudio
+
+R and RStudio are two different pieces of software that work together:
+
+- **R** is the actual programming language -- the engine that runs your code.
+- **RStudio** is an *interface* for working with R more comfortably -- it doesn't replace R, it sits on top of it.
+
+You install them in that order: R first (from CRAN), then RStudio (from posit.co), since RStudio needs an existing R installation to attach to.
+
+```{r, echo=FALSE}
+quiz_question_ui("install_quiz", "Which of these is true about the relationship between R and RStudio?", c(
+  "RStudio replaces R -- you only need to install RStudio." = "wrong_replaces",
+  "R is the language/engine, and RStudio is an interface built on top of it." = "correct",
+  "R and RStudio are two unrelated tools with no connection." = "wrong_unrelated"
+))
+```
+
+This tutorial runs entirely in your browser, so it has no way to see your own computer or confirm your install actually worked -- the steps below are the real, click-by-click process, but you're doing them in a separate window, alongside this one. Keep both open side by side if you can.
+
+### Step 1: Install R
+
+1. Go to **[cran.r-project.org](https://cran.r-project.org)** -- this is CRAN, the official source for R. (Don't search for "R" in a general search engine first -- it's a one-letter name and the results are mostly noise. Go straight to CRAN.)
+2. Near the top, click the download link for your operating system -- **Download R for Windows**, **macOS**, or **Linux**.
+3. **Windows:** click **base**, then click the large **Download R-4.x.x for Windows** link. Run the downloaded `.exe` file, and click through the installer -- **Next**, **Next**, **Install**, **Finish** -- accepting every default option. You don't need to change anything.
+4. **Mac:** you'll see two `.pkg` links, one for **Apple silicon (arm64)** and one for **Intel (x86_64)**. If you're not sure which chip your Mac has, check the Apple menu (top-left) > **About This Mac**. Download the matching one, open it, and follow the installer, accepting the defaults.
+
+That's it for this step -- once the installer finishes, R itself is installed, but you won't see any new icon to click yet. That's expected; R on its own has no visible interface. That's exactly what RStudio is for, which is the next step.
+
+```{r, echo=FALSE}
+quiz_question_ui("install_r_quiz", "You've just downloaded the R installer file (the .exe or .pkg). What should you do with it?", c(
+  "Delete it -- you don't need it once it's downloaded." = "wrong_delete",
+  "Open/run it and click through the installation wizard, accepting the defaults." = "correct",
+  "Rename it to \"RStudio\" so it opens the right program." = "wrong_rename"
+))
+```
+
+### Step 2: Install RStudio
+
+1. Go to **[posit.co/download/rstudio-desktop](https://posit.co/download/rstudio-desktop/)**.
+2. That page actually lists installing R as its own "Step 1" (which you already did above) -- scroll down to **Step 2: Install RStudio**.
+3. Click the download button for the free **RStudio Desktop** version matching your operating system.
+4. Run the installer and, same as before, click through it accepting the defaults.
+
+```{r, echo=FALSE}
+quiz_question_ui("install_rstudio_quiz", "Suppose you skipped installing R and only installed RStudio. What would happen when you tried to open RStudio?", c(
+  "It would work exactly the same -- RStudio doesn't actually need R." = "wrong_same",
+  "It would either fail to open properly or prompt you that no R installation was found." = "correct",
+  "It would automatically download and install R for you first." = "wrong_autoinstall"
+))
+```
+
+### Step 3: Open RStudio and do a first check
+
+Open **RStudio** now -- not R by itself; look for the RStudio icon specifically, since installing R doesn't create a separate icon for it, and R itself has no real interface to open.
+
+The first time it launches, RStudio automatically detects the R installation from Step 1 -- you shouldn't need to point it at anything manually. You'll see a window split into a few panes (covered in detail in the next section); for now, find the **Console** pane -- it's the one with a `>` prompt waiting for input.
+
+Click into the Console, type:
+
+```
+2 + 2
+```
+
+and press **Enter**. You should see:
+
+```
+[1] 4
+```
+
+That confirms R and RStudio are both installed and talking to each other correctly.
+
+```{r, echo=FALSE}
+quiz_question_ui("first_check_quiz", "You open RStudio, type 2 + 2 in the Console, and press Enter -- but instead of [1] 4, you get an error like \"R version not found\" or the Console looks broken. What's the most likely explanation?", c(
+  "RStudio is broken and needs to be reinstalled." = "wrong_broken",
+  "R wasn't fully installed (or installed correctly) in Step 1 -- go back and reinstall R, then reopen RStudio." = "correct",
+  "You need to install a separate \"math package\" before RStudio can do arithmetic." = "wrong_mathpkg"
+))
+```
+
+## Module 1: The RStudio panes
+
+When you open RStudio, you'll typically see four panes:
+
+- **Source** (top-left) -- where you write and edit scripts
+- **Console** (bottom-left) -- where code actually runs, one command at a time
+- **Environment / History** (top-right) -- shows the objects you've created and what you've run
+- **Files / Plots / Packages / Help** (bottom-right) -- a multi-purpose pane for browsing files, viewing plots, managing packages, and reading documentation
+
+```{r, echo=FALSE}
+quiz_question_ui("panes_quiz", "If you want to see a plot you just created, which pane would you look at?", c(
+  "Source" = "wrong_source",
+  "Console" = "wrong_console",
+  "Environment / History" = "wrong_env",
+  "Files / Plots / Packages / Help" = "correct"
+))
+```
+
+## Module 1: Working directory
+
+Your **working directory** is the folder R considers "home base" for the current session -- it's where R will look for files by default, and where it'll save things unless told otherwise.
+
+The most reliable way to manage this is with an **RStudio Project** (a folder with a `.Rproj` file in it). Opening a project automatically sets the working directory to that project's folder, which avoids a lot of "file not found" headaches later, especially once we start importing data.
+
+```{r, echo=FALSE}
+quiz_question_ui("wd_quiz", "What's the main benefit of using an RStudio Project instead of just opening loose scripts?", c(
+  "It makes your code run faster." = "wrong_speed",
+  "It automatically sets your working directory to a consistent, predictable folder." = "correct",
+  "It's required to install packages." = "wrong_packages"
+))
+```
+
+## Module 1: Wrapping up
+
+### Quick system check
+
+Before moving on, let's confirm everything's connected properly. Replace the placeholder below with your own name, keeping the quotation marks, and click **Submit Answer**.
+
+```{r, echo=FALSE}
+tagList(
+  textAreaInput("name_exercise_code", label = "R Code", value = '"___"', rows = 2, width = "100%"),
+  actionButton("name_exercise_submit", "Submit Answer", class = "btn btn-primary btn-sm"),
+  actionButton("name_exercise_reset", "Start Over", class = "btn btn-light btn-sm")
+)
+```
+
+```{r, echo=FALSE}
+uiOutput("name_exercise_feedback")
+```
+
+Stuck, or want to double check your thinking? The tutor chat below is available any time -- before you submit, after a failed attempt, or even after you've already passed.
+
+```{r, echo=FALSE}
+accordion(
+  id = "tutor_accordion_m1_1",
+  open = FALSE,
+  accordion_panel(
+    title = "Ask the Tutor",
+    chat_ui(
+      "tutor_chat_m1_1",
+      placeholder = "Ask a question about this exercise...",
+      greeting = TUTOR_CHAT_GREETING,
+      allow_attachments = FALSE
+    )
+  )
+)
+```
+
+### Up next
+
+Module 2 introduces actual R code -- installing packages, reading the console, and running provided scripts.
+
+```{r setup-module2, context="setup", include=FALSE}
+# Grading logic for this module's exercises. Unchanged from the
+# gradethis-based version -- only how it's *called* changed, not the
+# grading logic itself.
+
+evaluate_comment_exercise <- function(user_code, stage) {
+  keep_active <- grepl('(?m)^\\s*print\\("Keep this line"\\)\\s*$', user_code, perl = TRUE)
+  comment_present <- grepl('(?m)^\\s*#.*Comment this line out', user_code, perl = TRUE)
+  comment_still_active <- grepl('(?m)^\\s*print\\("Comment this line out"\\)\\s*$', user_code, perl = TRUE)
+
+  passed <- keep_active && comment_present && !comment_still_active
+
+  feedback_message <- if (passed) {
+    "Nice -- the first line still runs and the second is safely commented out."
+  } else if (identical(stage, "error_check")) {
+    "That code doesn't run as-is -- check that both lines are still valid R (matching quotes and parentheses), just with the second one commented out."
+  } else if (!comment_present) {
+    "The second line still isn't commented out -- add a # at the very start of that line."
+  } else if (comment_still_active) {
+    "Looks like there might be two copies of that line -- make sure only the commented-out version remains."
+  } else {
+    "Make sure the first print() line is still there and uncommented, and the second line is commented out with #."
+  }
+
+  list(passed = passed, message = feedback_message)
+}
+
+evaluate_fix_the_bug_exercise <- function(result, stage) {
+  passed <- !is.null(result) && is.character(result) && identical(trimws(result), "Hello")
+
+  feedback_message <- if (passed) {
+    "Nice work -- that runs cleanly now."
+  } else if (identical(stage, "error_check")) {
+    "That's still erroring. Take a look at what R is telling you, and check whether Hello needs to be treated as text."
+  } else {
+    "The code runs without an error, but it should print the word Hello. Double check what you changed."
+  }
+
+  list(passed = passed, message = feedback_message)
+}
+```
+
+```{r, context="server"}
+# --- Tutor chat wiring --------------------------------------------------
+# Each graded exercise gets its own always-available (collapsed by
+# default) tutor chat panel. See wire_tutor_chat() in R/tutor_utils.R for
+# the full mechanism (fresh client per open, both directions logged).
+
+wire_tutor_chat("module2_comment_out", "tutor_chat_m2_1", "tutor_accordion_m2_1", "Ask the Tutor", input, output, session)
+wire_tutor_chat("module2_fix_error", "tutor_chat_m2_2", "tutor_accordion_m2_2", "Ask the Tutor", input, output, session)
+```
+
+```{r, context="server"}
+# --- Quiz question wiring ------------------------------------------------
+quiz_question_server(input, output, session, "packages_quiz", list(
+  wrong_install = list(correct = FALSE, message = "That downloads it again -- not needed since it's already installed."),
+  correct = list(correct = TRUE, message = "Correct!"),
+  wrong_automatic = list(correct = FALSE, message = "Not quite -- installed packages still need to be loaded with library() each session.")
+))
+
+quiz_question_server(input, output, session, "console_quiz", list(
+  wrong_speed = list(correct = FALSE, message = "Not about speed -- the code executes the same either way."),
+  correct = list(correct = TRUE, message = "Correct!"),
+  wrong_oneline = list(correct = FALSE, message = "The Console can run many lines over a session -- it's just not saved as a file automatically.")
+))
+
+quiz_question_server(input, output, session, "running_quiz", list(
+  wrong_oneatatime = list(correct = FALSE, message = "That works, but it's not the most efficient option here."),
+  correct = list(correct = TRUE, message = "Correct!"),
+  wrong_retype = list(correct = FALSE, message = "Retyping isn't necessary -- you can run the file directly.")
+))
+
+quiz_question_server(input, output, session, "help_quiz", list(
+  correct = list(correct = TRUE, message = "Correct!"),
+  wrong_guess = list(correct = FALSE, message = "That works eventually, but it's not the fastest or most reliable way."),
+  wrong_reinstall = list(correct = FALSE, message = "Not related to checking a function's arguments.")
+))
+```
+
+```{r, context="server"}
+# --- Exercise wiring -------------------------------------------------------
+exercise_server(
+  input, output, session, "comment_exercise", "module2_comment_out", "tutor_accordion_m2_1",
+  starting_code = 'print("Keep this line")\nprint("Comment this line out")',
+  evaluate_fn = function(user_code, result, envir, stage) evaluate_comment_exercise(user_code, stage)
+)
+
+exercise_server(
+  input, output, session, "fix_the_bug_exercise", "module2_fix_error", "tutor_accordion_m2_2",
+  starting_code = "print(Hello)",
+  evaluate_fn = function(user_code, result, envir, stage) evaluate_fix_the_bug_exercise(result, stage)
+)
+```
+
+## Module 2: Welcome back
+
+Module 1 got R and RStudio installed and gave you a tour of the panes. This module is where you start actually touching code -- packages, the console, comments, running code someone else wrote, and (probably most usefully) how to read an error message without panicking.
+
+You are **not** expected to write substantial code from scratch in this course. The goal is to get comfortable enough that running and adjusting code -- your instructor's, or an AI assistant's -- feels normal rather than intimidating.
+
+## Module 2: Packages
+
+R on its own can do a lot, but most real work relies on **packages** -- bundles of extra functions other people have written. Getting a package ready to use is a two-step process:
+
+1. **`install.packages("packagename")`** -- downloads the package onto your computer. You only need to do this once per package (until you want to update it).
+2. **`library(packagename)`** -- loads that package into your *current* R session so its functions are available to use. You need to do this every time you start a new session and want to use that package.
+
+A common beginner mix-up: running `install.packages()` again every session (unnecessary -- it's already installed) instead of `library()` (which you do need every session).
+
+```{r, echo=FALSE}
+quiz_question_ui("packages_quiz", "You already installed the tidyverse package last week. You're starting a new R session today and want to use it. What do you run?", c(
+  "install.packages(\"tidyverse\")" = "wrong_install",
+  "library(tidyverse)" = "correct",
+  "Nothing -- it's automatically available." = "wrong_automatic"
+))
+```
+
+## Module 2: The Console
+
+The **Console** is where code actually executes, one command at a time. When you see a prompt like `>` with nothing after it, R is idle and waiting for your next command.
+
+Type a line of code into the Console and press Enter, and R runs it immediately -- there's no separate "run" step. This is great for quick checks (like testing what a function does), but it's not a great place to build up real work, because nothing you type there is automatically saved anywhere.
+
+That's what **scripts** are for -- files (usually ending in `.R`) where you write code that you can save, edit, and re-run later, rather than retyping it in the Console every time.
+
+```{r, echo=FALSE}
+quiz_question_ui("console_quiz", "What's the main advantage of writing your code in a script instead of typing it directly into the Console?", c(
+  "Scripts run faster than the Console." = "wrong_speed",
+  "You can save, edit, and re-run a script later; Console history is easy to lose track of." = "correct",
+  "The Console can only run one line of code, ever." = "wrong_oneline"
+))
+```
+
+## Module 2: Comments
+
+A **comment** is a line (or part of a line) that R ignores when running your code. In R, anything after a `#` on a line is a comment.
+
+Comments are useful for two main things:
+
+- **Notes to yourself or others** -- explaining *why* code does something, not just what it does.
+- **Temporarily turning off a line** -- if you want to skip a line without deleting it, put a `#` in front of it. This is extremely common when testing or debugging: comment a line out, see what changes, uncomment it later if you want it back.
+
+### Practice: comment out a line
+
+Below are two lines of code. Leave the first one exactly as it is, but use `#` to comment out the second one, so that only `"Keep this line"` gets printed when you submit. Don't delete the second line -- just comment it out.
+
+```{r, echo=FALSE}
+exercise_ui("comment_exercise", 'print("Keep this line")\nprint("Comment this line out")')
+```
+
+Stuck, or want to double check your thinking? The tutor chat below is available any time -- before you submit, after a failed attempt, or even after you've already passed.
+
+```{r, echo=FALSE}
+accordion(
+  id = "tutor_accordion_m2_1",
+  open = FALSE,
+  accordion_panel(
+    title = "Ask the Tutor",
+    chat_ui(
+      "tutor_chat_m2_1",
+      placeholder = "Ask a question about this exercise...",
+      greeting = TUTOR_CHAT_GREETING,
+      allow_attachments = FALSE
+    )
+  )
+)
+```
+
+### Nice work
+
+Once you've got that exercise passing, you've got the core mechanic of comments down -- everything else about them is just judgment on when to use one.
+
+## Module 2: Running code someone gives you
+
+In this course, you'll often be handed a chunk of R code -- from your instructor, from course materials, or from an AI assistant -- and your job is to run it, not to have written it from scratch. That's a completely normal, professional way to use R, and it's the main skill this module is building.
+
+In RStudio, the most common ways to run code are:
+
+- **Run the current line** -- click into the line in your script and press **Ctrl+Enter** (Cmd+Return on Mac). This runs just that line in the Console and moves your cursor to the next one.
+- **Run the whole script** -- click **Source** (or press Ctrl+Shift+Enter) to run every line in the file from top to bottom.
+
+```{r, echo=FALSE}
+quiz_question_ui("running_quiz", "You've been given a 10-line script and just want to see what the whole thing does. What's the most efficient way to run it?", c(
+  "Click into each line one at a time and press Ctrl+Enter, ten separate times." = "wrong_oneatatime",
+  "Click Source to run the entire script at once." = "correct",
+  "Retype all 10 lines into the Console by hand." = "wrong_retype"
+))
+```
+
+## Module 2: Reading error messages
+
+Sooner or later, you'll run code and see red text instead of the output you expected. That's an **error message** -- and it's not a sign you've broken something permanently. It's R telling you, often quite specifically, what it couldn't do and why.
+
+A few error types you'll run into constantly:
+
+- **`object 'x' not found`** -- R looked for something named `x` and it doesn't exist yet in your session. Common cause: a typo, or forgetting to treat text as text (more on that in a second).
+- **`could not find function "f"`** -- usually means a package hasn't been loaded yet with `library()`.
+- **`unexpected symbol` / `unexpected ')'`** -- a syntax problem, like a missing comma, an extra or missing parenthesis, or a missing quotation mark.
+
+One especially common mistake for beginners: writing a word without quotation marks when you meant it as text. R treats unquoted words as the *names* of objects it should already know about -- so `print(Hello)` looks for an object literally named `Hello`, not the word "Hello."
+
+### Practice: fix the error
+
+The code below has exactly this problem. Fix it so that it runs without an error and prints the word `Hello`.
+
+```{r, echo=FALSE}
+exercise_ui("fix_the_bug_exercise", "print(Hello)")
+```
+
+```{r, echo=FALSE}
+accordion(
+  id = "tutor_accordion_m2_2",
+  open = FALSE,
+  accordion_panel(
+    title = "Ask the Tutor",
+    chat_ui(
+      "tutor_chat_m2_2",
+      placeholder = "Ask a question about this exercise...",
+      greeting = TUTOR_CHAT_GREETING,
+      allow_attachments = FALSE
+    )
+  )
+)
+```
+
+### Nice work
+
+Errors like this will keep showing up throughout the course -- and now you've got a process for them: read the message, figure out what R was actually looking for, and fix that specific thing.
+
+## Module 2: Getting help
+
+R has built-in documentation for almost everything, and checking it is faster than it sounds:
+
+- **`?function_name`** or **`help(function_name)`** -- opens that function's help page (arguments, examples, what it returns) in the Help pane.
+- **`args(function_name)`** -- a quick shortcut that just shows you what arguments a function takes, without opening the full page.
+
+Later in this course, you may also have an AI assistant available to ask questions like this to directly -- but `?` is still worth knowing, since it's always there, works offline, and gives you the authoritative answer straight from the package itself.
+
+```{r, echo=FALSE}
+quiz_question_ui("help_quiz", "You want to know what arguments the mean() function accepts. What's the fastest way to check, from inside R?", c(
+  "?mean" = "correct",
+  "Guess and see what error you get." = "wrong_guess",
+  "Reinstall R." = "wrong_reinstall"
+))
+```
+
+## Module 2: Wrapping up
+
+You've now covered packages, the console vs. scripts, comments, running provided code, reading error messages, and finding help -- the core habits that make everything after this feel far less unfamiliar.
+
+### Up next
+
+Module 3 gets into actual data: data types, naming conventions, vectors, assignment, and basic functions.
+
+```{r setup-module3, context="setup", include=FALSE}
+# Grading logic for this module's exercises. Unchanged from the
+# gradethis-based version -- only how it's *called* changed, not the
+# grading logic itself.
+
+evaluate_assignment_exercise <- function(user_code, result, stage) {
+  has_apples <- grepl("apples\\s*<-", user_code)
+  has_oranges <- grepl("oranges\\s*<-", user_code)
+  correct_result <- is.numeric(result) && length(result) == 1 && isTRUE(result == 8)
+
+  passed <- has_apples && has_oranges && correct_result
+
+  feedback_message <- if (passed) {
+    "Nice -- apples and oranges assigned, and the total comes out to 8."
+  } else if (identical(stage, "error_check")) {
+    "That code doesn't run as-is -- check that both assignments and the final line are valid R."
+  } else if (!has_apples || !has_oranges) {
+    "Make sure you're assigning values to both `apples` and `oranges` using `<-`, replacing each `FIXME`."
+  } else {
+    "apples and oranges are assigned, but the last line doesn't come out to 8 yet -- check the values you gave each variable."
+  }
+
+  list(passed = passed, message = feedback_message)
+}
+
+evaluate_vectors_exercise <- function(user_code, result, stage) {
+  uses_c <- grepl("c\\(", user_code)
+  uses_index <- grepl("\\[", user_code)
+  correct_result <- is.numeric(result) && length(result) == 1 && isTRUE(result == 20)
+
+  passed <- uses_c && uses_index && correct_result
+
+  feedback_message <- if (passed) {
+    "That's it -- a vector of four numbers, and indexing pulled out the right one."
+  } else if (identical(stage, "error_check")) {
+    "That code doesn't run as-is -- check the commas inside c(...) and the brackets used for indexing."
+  } else if (!uses_c) {
+    "Build the vector with c(...), replacing the FIXME with the four numbers listed above."
+  } else if (!uses_index) {
+    "Once `scores` exists, use square brackets (like scores[FIXME]) to pull out one element."
+  } else {
+    "scores exists and you're indexing into it, but the result isn't 20 yet -- double check which position you're asking for, and that the vector's values are in order."
+  }
+
+  list(passed = passed, message = feedback_message)
+}
+
+evaluate_fix_comparison_exercise <- function(user_code, result, stage) {
+  kept_original_value <- grepl("temperature\\s*<-\\s*75", user_code)
+  uses_comparison <- grepl("==", user_code)
+  correct_result <- is.logical(result) && length(result) == 1 && isTRUE(result == FALSE)
+
+  passed <- kept_original_value && uses_comparison && correct_result
+
+  feedback_message <- if (passed) {
+    "Right -- that's a comparison now, temperature is still 75, and 75 == 80 correctly comes out FALSE."
+  } else if (identical(stage, "error_check")) {
+    "That code doesn't run as-is -- check that the second line is a complete, valid comparison."
+  } else if (!kept_original_value) {
+    "temperature's value changed from its original 75 -- make sure the second line only *compares* temperature to 80, without reassigning temperature itself."
+  } else if (!uses_comparison) {
+    "The second line is still doing an assignment, not a comparison -- R's comparison operator is ==, not a single =."
+  } else {
+    "You're comparing now, but the result isn't right yet -- think about whether 75 actually equals 80."
+  }
+
+  list(passed = passed, message = feedback_message)
+}
+
+evaluate_module3_cumulative_exercise <- function(user_code, result, envir, stage) {
+  has_prices <- !is.null(envir) && exists("prices", envir = envir, inherits = FALSE) &&
+    is.numeric(get("prices", envir = envir)) &&
+    length(get("prices", envir = envir)) == 4
+  has_tax_rate <- !is.null(envir) && exists("tax_rate", envir = envir, inherits = FALSE)
+  correct_result <- is.logical(result) && length(result) == 1 && isTRUE(result == TRUE)
+
+  passed <- has_prices && has_tax_rate && correct_result
+
+  feedback_message <- if (passed) {
+    "Everything checks out -- prices is a 4-item vector, tax_rate is defined, and the final comparison correctly comes out TRUE."
+  } else if (identical(stage, "error_check")) {
+    "That code still doesn't run -- work through the error message one issue at a time. It's telling you exactly where R got stuck."
+  } else if (!has_prices) {
+    "`prices` should end up as a vector of 4 numbers -- double check the values inside c(...)."
+  } else if (!has_tax_rate) {
+    "`tax_rate` doesn't exist yet -- check the variable name matches exactly everywhere it's used."
+  } else {
+    "The script runs and your objects look right, but the final comparison isn't coming out TRUE yet -- walk back through the arithmetic."
+  }
+
+  list(passed = passed, message = feedback_message)
+}
+```
+
+```{r, context="server"}
+# --- Tutor chat wiring --------------------------------------------------
+wire_tutor_chat("module3_assignment", "tutor_chat_m3_1", "tutor_accordion_m3_1", "Ask the Tutor", input, output, session)
+wire_tutor_chat("module3_vectors", "tutor_chat_m3_2", "tutor_accordion_m3_2", "Ask the Tutor", input, output, session)
+wire_tutor_chat("module3_fix_comparison", "tutor_chat_m3_3", "tutor_accordion_m3_3", "Ask the Tutor", input, output, session)
+wire_tutor_chat("module3_cumulative", "tutor_chat_m3_4", "tutor_accordion_m3_4", "Ask the Tutor", input, output, session)
+```
+
+```{r, context="server"}
+# --- Quiz question wiring ------------------------------------------------
+quiz_question_server(input, output, session, "types_quiz", list(
+  wrong_numeric = list(correct = FALSE, message = "Not quite -- TRUE isn't a number."),
+  wrong_character = list(correct = FALSE, message = "Not quite -- TRUE isn't in quotes, so it isn't text."),
+  correct = list(correct = TRUE, message = "Correct!")
+))
+
+quiz_question_server(input, output, session, "naming_quiz", list(
+  wrong_startsnum = list(correct = FALSE, message = "Variable names can't start with a number."),
+  wrong_space = list(correct = FALSE, message = "Variable names can't contain spaces."),
+  correct = list(correct = TRUE, message = "Correct!"),
+  wrong_reserved = list(correct = FALSE, message = "TRUE is a reserved word in R -- it can't be used as a variable name.")
+))
+
+quiz_question_server(input, output, session, "structures_quiz", list(
+  wrong_vector = list(correct = FALSE, message = "A vector is a single sequence of values -- no rows/columns structure."),
+  wrong_list = list(correct = FALSE, message = "A list can mix types, but it isn't organized into rows and columns."),
+  correct = list(correct = TRUE, message = "Correct!")
+))
+
+quiz_question_server(input, output, session, "comparison_quiz", list(
+  wrong_assign1 = list(correct = FALSE, message = "That assigns 100 to score -- it changes score's value rather than checking it."),
+  correct = list(correct = TRUE, message = "Correct!"),
+  wrong_assign2 = list(correct = FALSE, message = "That also assigns -- it doesn't check anything.")
+))
+
+quiz_question_server(input, output, session, "import_quiz", list(
+  wrong_doesnt_work = list(correct = FALSE, message = "It works fine for small amounts of data -- import is about practicality, not a hard limitation."),
+  correct = list(correct = TRUE, message = "Correct!"),
+  wrong_no_wd = list(correct = FALSE, message = "It's the opposite -- import is exactly where the working directory matters most.")
+))
+```
+
+```{r, context="server"}
+# --- Exercise wiring -------------------------------------------------------
+exercise_server(
+  input, output, session, "assignment_exercise", "module3_assignment", "tutor_accordion_m3_1",
+  starting_code = "apples <- FIXME\noranges <- FIXME\napples + oranges",
+  evaluate_fn = function(user_code, result, envir, stage) evaluate_assignment_exercise(user_code, result, stage)
+)
+
+exercise_server(
+  input, output, session, "vectors_exercise", "module3_vectors", "tutor_accordion_m3_2",
+  starting_code = "scores <- c(FIXME)\nscores[FIXME]",
+  evaluate_fn = function(user_code, result, envir, stage) evaluate_vectors_exercise(user_code, result, stage)
+)
+
+exercise_server(
+  input, output, session, "fix_comparison_exercise", "module3_fix_comparison", "tutor_accordion_m3_3",
+  starting_code = "temperature <- 75\ntemperature = 80",
+  evaluate_fn = function(user_code, result, envir, stage) evaluate_fix_comparison_exercise(user_code, result, stage)
+)
+
+exercise_server(
+  input, output, session, "module3_cumulative_exercise", "module3_cumulative", "tutor_accordion_m3_4",
+  starting_code = "prices <- c(2.50, 3.75, 1.25 4.00)\ntax_rate = 0.08\ntotal <- sum(prices)\nfinal_total <- total + (total * tax rate)\nfinal_total >= 10",
+  evaluate_fn = function(user_code, result, envir, stage) evaluate_module3_cumulative_exercise(user_code, result, envir, stage)
+)
+```
+
+## Module 3: Welcome back
+
+Modules 1 and 2 got you comfortable with R and RStudio as tools -- installing, running code, reading errors. This module is where you start actually working with **data**: the basic building blocks (data types, vectors, variables) that everything later in this course sits on top of.
+
+A quick preview of what "actual code" looks like -- this line just prints a short greeting:
+
+```{r hello-world-demo, echo=TRUE}
+print("Hello, world!")
+```
+
+That's it -- a function (`print`) called with a value in parentheses. Most of what follows is variations on that same basic shape.
+
+## Module 3: Data types
+
+Every value in R has a **type**. The three you'll run into constantly:
+
+- **numeric** -- numbers, like `5` or `3.14`
+- **character** -- text, always wrapped in quotes, like `"hello"`
+- **logical** -- `TRUE` or `FALSE`
+
+You can check any value's type with `class()`:
+
+```{r class-demo, echo=TRUE}
+class(5)
+class("hello")
+class(TRUE)
+```
+
+Mixing these up is a common source of errors -- for example, `5` and `"5"` look similar but behave very differently (you can do math with the first, not the second).
+
+```{r, echo=FALSE}
+quiz_question_ui("types_quiz", "What is the data type of the value TRUE?", c(
+  "numeric" = "wrong_numeric",
+  "character" = "wrong_character",
+  "logical" = "correct"
+))
+```
+
+## Module 3: Naming conventions
+
+Variable names in R follow a few rules:
+
+- Can contain letters, numbers, `.`, and `_`
+- Cannot start with a number
+- Cannot contain spaces
+- Are case-sensitive -- `Score` and `score` are two different variables
+- Can't be one of R's reserved words (`TRUE`, `FALSE`, `if`, `for`, etc.)
+
+Style-wise, this course uses `snake_case` (lowercase words separated by underscores, like `student_score`) -- you'll see that convention throughout.
+
+```{r, echo=FALSE}
+quiz_question_ui("naming_quiz", "Which of these is a valid R variable name?", c(
+  "2nd_attempt" = "wrong_startsnum",
+  "student score" = "wrong_space",
+  "student_score" = "correct",
+  "TRUE" = "wrong_reserved"
+))
+```
+
+## Module 3: Assignment
+
+**Assignment** is how you store a value in a variable so you can use it later, using the `<-` operator (read as "gets"):
+
+```{r assignment-demo, echo=TRUE}
+student_score <- 92
+student_score
+```
+
+You'll sometimes see `=` used for assignment too, and at the top level it works the same way -- but this course sticks to `<-`, since `=` also means something different (comparison, using `==`) that you'll run into shortly.
+
+### Practice: assign and combine
+
+Below, assign the number `5` to `apples` and the number `3` to `oranges`, replacing each `FIXME`. Leave the last line as-is -- once both variables are assigned correctly, it should evaluate to `8`.
+
+```{r, echo=FALSE}
+exercise_ui("assignment_exercise", "apples <- FIXME\noranges <- FIXME\napples + oranges")
+```
+
+Stuck, or want to double check your thinking? The tutor chat below is available any time -- before you submit, after a failed attempt, or even after you've already passed.
+
+```{r, echo=FALSE}
+accordion(
+  id = "tutor_accordion_m3_1",
+  open = FALSE,
+  accordion_panel(
+    title = "Ask the Tutor",
+    chat_ui(
+      "tutor_chat_m3_1",
+      placeholder = "Ask a question about this exercise...",
+      greeting = TUTOR_CHAT_GREETING,
+      allow_attachments = FALSE
+    )
+  )
+)
+```
+
+## Module 3: Vectors
+
+A **vector** is a sequence of values of the same type, built with `c()` (short for "combine"):
+
+```{r vector-demo, echo=TRUE}
+heights <- c(64, 68, 71, 66)
+heights
+```
+
+You can pull out one element by its position using square brackets -- R counts positions starting from **1**, not 0:
+
+```{r vector-index-demo, echo=TRUE}
+heights[1]
+```
+
+### Practice: build and index a vector
+
+Below, build a vector called `scores` containing the numbers `10`, `20`, `30`, and `40` in that order, replacing the first `FIXME`. Then, on the last line, index into `scores` to retrieve its **second** element, replacing the second `FIXME`.
+
+```{r, echo=FALSE}
+exercise_ui("vectors_exercise", "scores <- c(FIXME)\nscores[FIXME]")
+```
+
+Stuck, or want to double check your thinking? The tutor chat below is available any time -- before you submit, after a failed attempt, or even after you've already passed.
+
+```{r, echo=FALSE}
+accordion(
+  id = "tutor_accordion_m3_2",
+  open = FALSE,
+  accordion_panel(
+    title = "Ask the Tutor",
+    chat_ui(
+      "tutor_chat_m3_2",
+      placeholder = "Ask a question about this exercise...",
+      greeting = TUTOR_CHAT_GREETING,
+      allow_attachments = FALSE
+    )
+  )
+)
+```
+
+## Module 3: Data structures
+
+Beyond single vectors, R has a few other ways of organizing data:
+
+- **vector** -- a sequence of values, all the same type (what you just built above)
+- **list** -- a sequence of values that *can* mix types (a number, some text, even another vector, all in one list)
+- **data frame** -- a table, like a spreadsheet: rows are observations, columns are variables, and each column is really just a vector
+
+You'll work hands-on with data frames starting in Module 4 -- for now, just recognize the terms.
+
+```{r, echo=FALSE}
+quiz_question_ui("structures_quiz", "Which data structure is organized like a spreadsheet, with rows and columns?", c(
+  "vector" = "wrong_vector",
+  "list" = "wrong_list",
+  "data frame" = "correct"
+))
+```
+
+## Module 3: Basic functions and comparisons
+
+You've already used a few **functions** -- `print()`, `class()`, `c()`. Functions take input in parentheses and do something with it. A few more you'll see often:
+
+- **`sum(x)`** -- adds up all values in a vector
+- **`mean(x)`** -- the average of a vector's values
+- **`round(x, n)`** -- rounds a number to `n` decimal places
+
+**Comparisons** ask a yes/no question and return `TRUE` or `FALSE`, using operators like `==` (equal to), `!=` (not equal to), `<`, `>`, `<=`, `>=`:
+
+```{r comparison-demo, echo=TRUE}
+10 > 7
+10 == 7
+```
+
+The most common beginner mistake here: writing a single `=` when you meant a comparison. A single `=` at the top level *assigns* a value (like `<-` does); only `==` *compares* two values. These look almost identical but do very different things.
+
+```{r, echo=FALSE}
+quiz_question_ui("comparison_quiz", "You want to check whether `score` is equal to 100, without changing its value. Which line does that?", c(
+  "score = 100" = "wrong_assign1",
+  "score == 100" = "correct",
+  "score <- 100" = "wrong_assign2"
+))
+```
+
+### Practice: fix the comparison
+
+The code below is supposed to check whether `temperature` is equal to `80`, **without** changing `temperature`'s original value of `75`. Right now it does the opposite -- fix the second line so it performs a comparison instead of an assignment.
+
+```{r, echo=FALSE}
+exercise_ui("fix_comparison_exercise", "temperature <- 75\ntemperature = 80")
+```
+
+Stuck, or want to double check your thinking? The tutor chat below is available any time -- before you submit, after a failed attempt, or even after you've already passed.
+
+```{r, echo=FALSE}
+accordion(
+  id = "tutor_accordion_m3_3",
+  open = FALSE,
+  accordion_panel(
+    title = "Ask the Tutor",
+    chat_ui(
+      "tutor_chat_m3_3",
+      placeholder = "Ask a question about this exercise...",
+      greeting = TUTOR_CHAT_GREETING,
+      allow_attachments = FALSE
+    )
+  )
+)
+```
+
+## Module 3: Importing data
+
+So far every value has been typed directly into your code. In practice, most real data lives in files -- most commonly `.csv` files -- and you **import** it into R rather than retyping it.
+
+The base R function for this is `read.csv("filename.csv")`, which reads a CSV file into a data frame. The tidyverse equivalent, `readr::read_csv()`, does the same thing with a few conveniences (faster, slightly stricter about column types).
+
+Either way, R needs to know *where* the file is -- which is exactly why your working directory (Module 1) matters here: file paths are usually given relative to it.
+
+In this course, you likely won't be importing files from scratch very often -- import code is often provided as part of a script, similar to how you've already been handed code to run in Module 2. What matters most right now is recognizing what import is for and roughly how it works, not memorizing every argument.
+
+```{r, echo=FALSE}
+quiz_question_ui("import_quiz", "Why would you import a data file instead of typing the data directly into your script?", c(
+  "Typing data by hand doesn't work in R." = "wrong_doesnt_work",
+  "Real datasets are often too large (or come from someone else) to reasonably retype, and importing keeps your script in sync with the original data." = "correct",
+  "Imported data doesn't need a working directory." = "wrong_no_wd"
+))
+```
+
+## Module 3: Putting it together
+
+You've now covered data types, naming, assignment, vectors, data structures, functions, comparisons, and import. Real code rarely uses just one of these skills in isolation -- so this last exercise mixes several together, and asks you to fix more than one problem at once.
+
+### Practice: fix the receipt calculation
+
+The script below is supposed to calculate a total with tax and check whether it's at least $10 -- but it has more than one problem. Fix it so it runs without errors and the last line evaluates to `TRUE`. (Hint: work through any error message one issue at a time, same as in Module 2.)
+
+```{r, echo=FALSE}
+exercise_ui("module3_cumulative_exercise", "prices <- c(2.50, 3.75, 1.25 4.00)\ntax_rate = 0.08\ntotal <- sum(prices)\nfinal_total <- total + (total * tax rate)\nfinal_total >= 10")
+```
+
+Stuck, or want to double check your thinking? The tutor chat below is available any time -- before you submit, after a failed attempt, or even after you've already passed.
+
+```{r, echo=FALSE}
+accordion(
+  id = "tutor_accordion_m3_4",
+  open = FALSE,
+  accordion_panel(
+    title = "Ask the Tutor",
+    chat_ui(
+      "tutor_chat_m3_4",
+      placeholder = "Ask a question about this exercise...",
+      greeting = TUTOR_CHAT_GREETING,
+      allow_attachments = FALSE
+    )
+  )
+)
+```
+
+### Nice work
+
+That last exercise had several moving pieces at once -- a missing comma, a variable name mismatch, and a comparison -- which is a more realistic picture of debugging than fixing one isolated line at a time.
+
+## Module 3: Wrapping up
+
+You've now covered data types, naming conventions, assignment, vectors, data structures, basic functions and comparisons, and importing data -- the fundamentals everything later in this course builds on.
+
+### Up next
+
+Module 4 moves into cleaning up real data: inspecting a data frame, renaming columns, indexing/subsetting, and the dplyr verbs (filter, select, mutate, arrange, group_by, summarize).
+
+```{r setup-module4, context="setup", include=FALSE}
+library(dplyr)
+
+# --- Practice data ---------------------------------------------------------
+# A small, intentionally messy fish survey data set. Column names use the
+# dot-separated, mixed-case style read.csv()/Excel exports commonly produce
+# -- exactly what "Renaming columns" below has students fix. Two columns
+# (Length.mm, Weight.g) include real NAs so later topics (NA handling,
+# na.rm) have something genuine to work with, not a contrived edge case.
+fish_survey <- data.frame(
+  Fish.ID      = 1:10,
+  Species.Name = c("Bluegill", "Bluegill", "Largemouth Bass", "Largemouth Bass",
+                    "Yellow Perch", "Yellow Perch", "Bluegill", "Largemouth Bass",
+                    "Yellow Perch", "Bluegill"),
+  Length.mm    = c(152, 148, 310, NA, 205, 198, 160, 295, 210, 145),
+  Weight.g     = c(45, 42, NA, 610, 98, 95, 50, 580, NA, 40),
+  Lake.Site    = c("North Lake", "North Lake", "South Lake", "South Lake",
+                    "North Lake", "South Lake", "North Lake", "South Lake",
+                    "North Lake", "South Lake"),
+  stringsAsFactors = FALSE
+)
+
+# Already-renamed version, used by every exercise AFTER the renaming one --
+# so later exercises don't depend on a student having gotten renaming right.
+# Also reused as-is by Module 5 below (no need to rebuild it there now that
+# both modules live in the same document/session).
+fish_clean <- fish_survey
+names(fish_clean) <- c("fish_id", "species", "length_mm", "weight_g", "lake_site")
+
+# exercise_server() (R/tutor_utils.R) evaluates submitted code via
+# eval(parse(text = user_code), envir = new.env()) -- new.env()'s parent
+# chain resolves through wherever exercise_server() itself was source()'d
+# (source()'s default local = FALSE means that's .GlobalEnv), NOT through
+# this setup chunk's own local execution environment. Modules 1-3 never hit
+# this because their exercises only ever built self-contained vectors from
+# scratch -- this is the first module where exercise code needs to see a
+# pre-existing shared object, so it needs to be explicitly placed in
+# .GlobalEnv (safe here: both are static, read-only reference data, same
+# for every session, set once when the R process starts).
+assign("fish_survey", fish_survey, envir = globalenv())
+assign("fish_clean", fish_clean, envir = globalenv())
+
+# Grading logic for each exercise. log_attempt_and_maybe_open_chat() and
+# wire_tutor_chat() themselves are shared across modules -- see
+# R/tutor_utils.R.
+
+evaluate_rename_exercise <- function(user_code, result, envir, stage) {
+  expected_names <- c("fish_id", "species", "length_mm", "weight_g", "lake_site")
+  has_fish_clean <- !is.null(envir) && exists("fish_clean", envir = envir, inherits = FALSE) &&
+    is.data.frame(get("fish_clean", envir = envir))
+  correct_result <- is.character(result) && identical(result, expected_names)
+
+  passed <- has_fish_clean && correct_result
+
+  feedback_message <- if (passed) {
+    "All five columns are renamed correctly, in order -- fish_clean is ready to work with."
+  } else if (identical(stage, "error_check")) {
+    "That code doesn't run as-is -- check that every rename() argument has the form new_name = OldName, separated by commas."
+  } else if (!has_fish_clean) {
+    "fish_clean doesn't exist yet -- make sure the first line assigns the renamed result to fish_clean."
+  } else {
+    "fish_clean exists, but the column names aren't all correct yet -- check names(fish_clean) against fish_id, species, length_mm, weight_g, lake_site, in that order."
+  }
+
+  list(passed = passed, message = feedback_message)
+}
+
+evaluate_indexing_exercise <- function(user_code, result, stage) {
+  uses_bracket <- grepl("\\[", user_code)
+  correct_result <- is.data.frame(result) && nrow(result) == 5 && all(result$lake_site == "North Lake")
+
+  passed <- uses_bracket && correct_result
+
+  feedback_message <- if (passed) {
+    "That's it -- 5 rows, all from North Lake."
+  } else if (identical(stage, "error_check")) {
+    "That code doesn't run as-is -- check the comma inside the brackets (rows go before it, columns after -- leaving columns blank keeps them all)."
+  } else if (!uses_bracket) {
+    "Use square-bracket indexing here (fish_clean[ ... , ]), not a dplyr verb -- that's the point of this exercise."
+  } else if (is.data.frame(result) && nrow(result) != 5) {
+    "That ran, but it isn't returning exactly the 5 North Lake rows yet -- double check the comparison inside the brackets."
+  } else {
+    "Check that you're comparing lake_site to exactly \"North Lake\" (spelling and capitalization matter) before the comma."
+  }
+
+  list(passed = passed, message = feedback_message)
+}
+
+evaluate_filter_select_exercise <- function(user_code, result, stage) {
+  uses_filter <- grepl("filter\\s*\\(", user_code)
+  uses_select <- grepl("select\\s*\\(", user_code)
+  correct_result <- is.data.frame(result) &&
+    identical(names(result), c("species", "length_mm")) &&
+    nrow(result) == 4 &&
+    all(result$species == "Bluegill")
+
+  passed <- uses_filter && uses_select && correct_result
+
+  feedback_message <- if (passed) {
+    "Right -- 4 Bluegill rows, with just species and length_mm kept."
+  } else if (identical(stage, "error_check")) {
+    "That code doesn't run as-is -- check the pipe (|>) connects each step, and filter()'s condition uses ==, not =."
+  } else if (!uses_filter) {
+    "This still needs a filter() step to keep only the Bluegill rows."
+  } else if (!uses_select) {
+    "This still needs a select() step to keep only species and length_mm."
+  } else if (is.data.frame(result) && nrow(result) != 4) {
+    "filter() and select() are both there, but the row count isn't right yet -- double check the species name inside filter()."
+  } else {
+    "filter() and select() both ran, but the columns kept aren't exactly species and length_mm -- check select()'s arguments."
+  }
+
+  list(passed = passed, message = feedback_message)
+}
+
+evaluate_mutate_arrange_exercise <- function(user_code, result, stage) {
+  uses_mutate <- grepl("mutate\\s*\\(", user_code)
+  uses_arrange <- grepl("arrange\\s*\\(", user_code)
+  has_weight_kg <- is.data.frame(result) && "weight_kg" %in% names(result)
+  correct_kg <- has_weight_kg && isTRUE(all.equal(result$weight_kg, result$weight_g / 1000))
+  correct_order <- is.data.frame(result) && nrow(result) > 0 && isTRUE(result$length_mm[1] == 310)
+
+  passed <- uses_mutate && uses_arrange && correct_kg && correct_order
+
+  feedback_message <- if (passed) {
+    "weight_kg is calculated correctly, and the rows are sorted with the longest fish first."
+  } else if (identical(stage, "error_check")) {
+    "That code doesn't run as-is -- check both mutate()'s and arrange()'s arguments are complete, valid R expressions."
+  } else if (!uses_mutate || !has_weight_kg) {
+    "mutate() should add a new weight_kg column, equal to weight_g divided by 1000."
+  } else if (!correct_kg) {
+    "weight_kg exists, but its values aren't weight_g / 1000 yet -- check the formula inside mutate()."
+  } else if (!uses_arrange || !correct_order) {
+    "weight_kg looks right, but the rows aren't sorted longest-to-shortest yet -- check that arrange() is using desc() on length_mm."
+  } else {
+    "Almost there -- double check both the mutate() and arrange() steps."
+  }
+
+  list(passed = passed, message = feedback_message)
+}
+
+evaluate_group_summarize_exercise <- function(user_code, result, stage) {
+  uses_group_by <- grepl("group_by\\s*\\(", user_code)
+  uses_summarize <- grepl("summari[sz]e\\s*\\(", user_code)
+  has_col <- is.data.frame(result) && "mean_length" %in% names(result)
+  right_shape <- is.data.frame(result) && nrow(result) == 3
+  no_na <- has_col && right_shape && !any(is.na(result$mean_length))
+
+  passed <- uses_group_by && uses_summarize && has_col && right_shape && no_na
+
+  feedback_message <- if (passed) {
+    "Three species, each with a clean (non-NA) average length -- exactly right."
+  } else if (identical(stage, "error_check")) {
+    "That code doesn't run as-is -- check group_by()'s and summarize()'s arguments are complete."
+  } else if (!uses_group_by) {
+    "This needs a group_by() step, grouping by species."
+  } else if (!has_col) {
+    "summarize() should create a column named exactly mean_length."
+  } else if (!right_shape) {
+    "Check that you're grouping by species -- there are 3 species in this data, and something else is producing a different number of groups."
+  } else if (!no_na) {
+    "mean_length is coming out NA for at least one species -- length_mm has a missing value, so mean() needs na.rm = TRUE."
+  } else {
+    "Close -- double check both steps."
+  }
+
+  list(passed = passed, message = feedback_message)
+}
+
+evaluate_na_handling_exercise <- function(user_code, result, stage) {
+  uses_filter <- grepl("filter\\s*\\(", user_code)
+  uses_is_na <- grepl("is\\.na\\s*\\(", user_code)
+  has_col <- is.data.frame(result) && "avg_weight" %in% names(result)
+  correct_result <- has_col && !is.na(result$avg_weight[1]) && isTRUE(all.equal(result$avg_weight[1], 195))
+
+  passed <- uses_filter && uses_is_na && correct_result
+
+  feedback_message <- if (passed) {
+    "195 -- exactly right, and the missing rows never made it into the average."
+  } else if (identical(stage, "error_check")) {
+    "That code doesn't run as-is -- check that ! and is.na(...) are written correctly inside filter()."
+  } else if (!uses_filter || !uses_is_na) {
+    "filter() should keep only the rows where weight_g is NOT missing -- use is.na() with ! in front of it."
+  } else if (has_col && is.na(result$avg_weight[1])) {
+    "avg_weight is still coming out NA -- the missing rows aren't being filtered out yet."
+  } else {
+    "That's filtering something, but avg_weight isn't 195 yet -- double check the condition inside filter()."
+  }
+
+  list(passed = passed, message = feedback_message)
+}
+
+evaluate_module4_cumulative_exercise <- function(user_code, result, stage) {
+  uses_filter <- grepl("filter\\s*\\(", user_code)
+  uses_group_by <- grepl("group_by\\s*\\(", user_code)
+  uses_arrange <- grepl("arrange\\s*\\(", user_code)
+  right_shape <- is.data.frame(result) && nrow(result) == 2 && "avg_length" %in% names(result)
+  no_na <- right_shape && !any(is.na(result$avg_length))
+  right_order <- right_shape && identical(as.character(result$lake_site[1]), "South Lake")
+
+  passed <- uses_filter && uses_group_by && uses_arrange && right_shape && no_na && right_order
+
+  feedback_message <- if (passed) {
+    "That's the full pipeline -- missing lengths filtered out, averaged per lake, and sorted with the higher average first (South Lake)."
+  } else if (identical(stage, "error_check")) {
+    "That code doesn't run as-is -- work through it one pipe step at a time, same as you've done in earlier modules."
+  } else if (!uses_filter) {
+    "Start with a filter() step that removes rows where length_mm is missing."
+  } else if (!uses_group_by) {
+    "This needs a group_by() step, grouping by lake_site."
+  } else if (!right_shape) {
+    "Check that summarize() is creating a column named exactly avg_length, and that group_by(lake_site) is producing 2 groups."
+  } else if (!no_na) {
+    "avg_length is coming out NA for at least one lake -- make sure the filter() step (removing missing length_mm rows) comes before the average is calculated."
+  } else if (!uses_arrange || !right_order) {
+    "The averages look right, but they're not sorted highest-to-lowest yet -- check that arrange() is using desc() on avg_length."
+  } else {
+    "Close -- double check each step of the pipeline."
+  }
+
+  list(passed = passed, message = feedback_message)
+}
+```
+
+```{r, context="server"}
+# --- Tutor chat wiring --------------------------------------------------
+wire_tutor_chat("module4_rename", "tutor_chat_m4_1", "tutor_accordion_m4_1", "Ask the Tutor", input, output, session)
+wire_tutor_chat("module4_indexing", "tutor_chat_m4_2", "tutor_accordion_m4_2", "Ask the Tutor", input, output, session)
+wire_tutor_chat("module4_filter_select", "tutor_chat_m4_3", "tutor_accordion_m4_3", "Ask the Tutor", input, output, session)
+wire_tutor_chat("module4_mutate_arrange", "tutor_chat_m4_4", "tutor_accordion_m4_4", "Ask the Tutor", input, output, session)
+wire_tutor_chat("module4_group_summarize", "tutor_chat_m4_5", "tutor_accordion_m4_5", "Ask the Tutor", input, output, session)
+wire_tutor_chat("module4_na_handling", "tutor_chat_m4_6", "tutor_accordion_m4_6", "Ask the Tutor", input, output, session)
+wire_tutor_chat("module4_cumulative", "tutor_chat_m4_7", "tutor_accordion_m4_7", "Ask the Tutor", input, output, session)
+```
+
+```{r, context="server"}
+# --- Quiz question wiring ------------------------------------------------
+quiz_question_server(input, output, session, "inspect_quiz", list(
+  wrong_nrow = list(correct = FALSE, message = "nrow() only tells you the number of rows -- not each column's type."),
+  correct = list(correct = TRUE, message = "Correct!"),
+  wrong_sum = list(correct = FALSE, message = "sum() only works on numeric vectors, not a whole data frame with mixed column types.")
+))
+
+quiz_question_server(input, output, session, "indexing_quiz", list(
+  correct = list(correct = TRUE, message = "Correct!"),
+  wrong_compare = list(correct = FALSE, message = "It's not comparing two data frames -- it's separating rows from columns within one."),
+  wrong_rename = list(correct = FALSE, message = "Indexing brackets aren't for renaming -- that's what rename() is for.")
+))
+
+quiz_question_server(input, output, session, "pipe_quiz", list(
+  correct = list(correct = TRUE, message = "Correct!"),
+  wrong_multiply = list(correct = FALSE, message = "The pipe isn't arithmetic -- it just passes the left side in as the first argument to the right side."),
+  wrong_dataframe_only = list(correct = FALSE, message = "The pipe works with any kind of value, not just data frames.")
+))
+
+quiz_question_server(input, output, session, "na_quiz", list(
+  wrong_20 = list(correct = FALSE, message = "R doesn't just skip the NA silently -- it has to be told to."),
+  correct = list(correct = TRUE, message = "Correct! Any arithmetic involving NA returns NA by default, unless you tell R how to handle it."),
+  wrong_40 = list(correct = FALSE, message = "R doesn't treat a missing value as 0 -- it treats the whole result as unknown (NA).")
+))
+```
+
+```{r, context="server"}
+# --- Exercise wiring -------------------------------------------------------
+exercise_server(
+  input, output, session, "rename_exercise", "module4_rename", "tutor_accordion_m4_1",
+  starting_code = "fish_clean <- fish_survey |> rename(\n  fish_id = FIXME,\n  species = FIXME,\n  length_mm = FIXME,\n  weight_g = FIXME,\n  lake_site = FIXME\n)\nnames(fish_clean)",
+  evaluate_fn = function(user_code, result, envir, stage) evaluate_rename_exercise(user_code, result, envir, stage)
+)
+
+exercise_server(
+  input, output, session, "indexing_exercise", "module4_indexing", "tutor_accordion_m4_2",
+  starting_code = "fish_clean[fish_clean$lake_site == FIXME, ]",
+  evaluate_fn = function(user_code, result, envir, stage) evaluate_indexing_exercise(user_code, result, stage)
+)
+
+exercise_server(
+  input, output, session, "filter_select_exercise", "module4_filter_select", "tutor_accordion_m4_3",
+  starting_code = "fish_clean |>\n  filter(species == FIXME) |>\n  select(species, FIXME)",
+  evaluate_fn = function(user_code, result, envir, stage) evaluate_filter_select_exercise(user_code, result, stage)
+)
+
+exercise_server(
+  input, output, session, "mutate_arrange_exercise", "module4_mutate_arrange", "tutor_accordion_m4_4",
+  starting_code = "fish_clean |>\n  mutate(weight_kg = FIXME) |>\n  arrange(FIXME)",
+  evaluate_fn = function(user_code, result, envir, stage) evaluate_mutate_arrange_exercise(user_code, result, stage)
+)
+
+exercise_server(
+  input, output, session, "group_summarize_exercise", "module4_group_summarize", "tutor_accordion_m4_5",
+  starting_code = "fish_clean |>\n  group_by(FIXME) |>\n  summarize(mean_length = mean(length_mm, na.rm = FIXME))",
+  evaluate_fn = function(user_code, result, envir, stage) evaluate_group_summarize_exercise(user_code, result, stage)
+)
+
+exercise_server(
+  input, output, session, "na_handling_exercise", "module4_na_handling", "tutor_accordion_m4_6",
+  starting_code = "fish_clean |>\n  filter(FIXME) |>\n  summarize(avg_weight = mean(weight_g))",
+  evaluate_fn = function(user_code, result, envir, stage) evaluate_na_handling_exercise(user_code, result, stage)
+)
+
+exercise_server(
+  input, output, session, "module4_cumulative_exercise", "module4_cumulative", "tutor_accordion_m4_7",
+  starting_code = "fish_clean |>\n  filter(FIXME) |>\n  group_by(FIXME) |>\n  summarize(avg_length = mean(length_mm)) |>\n  arrange(FIXME)",
+  evaluate_fn = function(user_code, result, envir, stage) evaluate_module4_cumulative_exercise(user_code, result, stage)
+)
+```
+
+## Module 4: Welcome back
+
+Modules 1-3 got you comfortable with R itself: running code, reading errors, and working with the basic building blocks (values, vectors, data frames as a concept). This module is where you start actually **working with a real data frame** -- inspecting it, cleaning it up, and asking questions of it using `dplyr`, the most common R package for this kind of work.
+
+Throughout this module you'll use a small practice data set, `fish_survey` -- results from a (fictional) fish survey of two lakes. It looks like this:
+
+```{r fish-survey-demo, echo=TRUE}
+fish_survey
+```
+
+Real data almost never arrives this clean-looking, though -- notice the column names (`Fish.ID`, `Species.Name`, ...) and the couple of missing values (`NA`). Both of those are exactly what this module is about.
+
+## Module 4: Inspecting a data frame
+
+Before changing anything, it's worth looking at what you actually have. A few functions for that:
+
+- **`str(x)`** -- a compact summary: each column's name, type, and a preview of its values
+- **`head(x)`** -- the first few rows
+- **`nrow(x)` / `ncol(x)`** -- the number of rows / columns
+- **`names(x)`** -- just the column names
+- **`summary(x)`** -- basic statistics (min, max, mean, etc.) for each column
+
+```{r inspect-demo, echo=TRUE}
+str(fish_survey)
+```
+
+```{r, echo=FALSE}
+quiz_question_ui("inspect_quiz", "Which function would you use to quickly see each column's data type and a preview of its values?", c(
+  "nrow(fish_survey)" = "wrong_nrow",
+  "str(fish_survey)" = "correct",
+  "sum(fish_survey)" = "wrong_sum"
+))
+```
+
+## Module 4: Renaming columns
+
+`fish_survey`'s column names (`Fish.ID`, `Species.Name`, `Length.mm`, `Weight.g`, `Lake.Site`) are a common side effect of importing data from a spreadsheet or CSV -- spaces and mixed capitalization get replaced with dots. Before doing anything else, it's worth renaming them to this course's `snake_case` convention, using dplyr's `rename()`:
+
+```{r rename-demo, echo=TRUE}
+fish_survey |> rename(species = Species.Name) |> names()
+```
+
+`rename()` always reads as `new_name = OldName` -- the new name comes first.
+
+### Practice: rename every column
+
+Below, rename all five columns of `fish_survey` to `fish_id`, `species`, `length_mm`, `weight_g`, and `lake_site` (in that order), replacing each `FIXME` with the matching original column name. Store the result in `fish_clean` -- you'll use that cleaned-up version for the rest of this module.
+
+```{r, echo=FALSE}
+exercise_ui("rename_exercise", "fish_clean <- fish_survey |> rename(\n  fish_id = FIXME,\n  species = FIXME,\n  length_mm = FIXME,\n  weight_g = FIXME,\n  lake_site = FIXME\n)\nnames(fish_clean)")
+```
+
+Stuck, or want to double check your thinking? The tutor chat below is available any time -- before you submit, after a failed attempt, or even after you've already passed.
+
+```{r, echo=FALSE}
+accordion(
+  id = "tutor_accordion_m4_1",
+  open = FALSE,
+  accordion_panel(
+    title = "Ask the Tutor",
+    chat_ui(
+      "tutor_chat_m4_1",
+      placeholder = "Ask a question about this exercise...",
+      greeting = TUTOR_CHAT_GREETING,
+      allow_attachments = FALSE
+    )
+  )
+)
+```
+
+## Module 4: Indexing and subsetting
+
+From here on, every exercise and demo uses `fish_clean` -- the already-renamed version of the data (so this module doesn't depend on your rename exercise above being correct).
+
+Before dplyr, base R already has a way to pull out specific rows and columns, using square brackets: `df[rows, columns]`. Leaving either side blank keeps everything on that side.
+
+```{r indexing-demo, echo=TRUE}
+fish_clean[1, ]
+fish_clean[, "species"]
+```
+
+You can also use a condition instead of a row number, to keep only rows matching that condition:
+
+```{r indexing-condition-demo, echo=TRUE}
+fish_clean[fish_clean$species == "Bluegill", ]
+```
+
+```{r, echo=FALSE}
+quiz_question_ui("indexing_quiz", "In fish_clean[fish_clean$lake_site == \"North Lake\", ], what does the comma separate?", c(
+  "Rows (before the comma) from columns (after the comma)" = "correct",
+  "Two separate data frames being compared" = "wrong_compare",
+  "The old column name from the new one" = "wrong_rename"
+))
+```
+
+### Practice: subset by condition
+
+Below, using square-bracket indexing (not a dplyr verb), return only the rows of `fish_clean` where `lake_site` equals `"North Lake"`, replacing `FIXME`.
+
+```{r, echo=FALSE}
+exercise_ui("indexing_exercise", "fish_clean[fish_clean$lake_site == FIXME, ]")
+```
+
+Stuck, or want to double check your thinking? The tutor chat below is available any time -- before you submit, after a failed attempt, or even after you've already passed.
+
+```{r, echo=FALSE}
+accordion(
+  id = "tutor_accordion_m4_2",
+  open = FALSE,
+  accordion_panel(
+    title = "Ask the Tutor",
+    chat_ui(
+      "tutor_chat_m4_2",
+      placeholder = "Ask a question about this exercise...",
+      greeting = TUTOR_CHAT_GREETING,
+      allow_attachments = FALSE
+    )
+  )
+)
+```
+
+## Module 4: The pipe operator
+
+Bracket indexing works, but it gets hard to read once you start chaining several steps together. R's **pipe operator**, `|>`, takes the value on its left and passes it in as the first argument to the function on its right -- so `x |> mean()` is exactly the same as `mean(x)`.
+
+```{r pipe-demo, echo=TRUE}
+fish_clean$length_mm |> mean(na.rm = TRUE)
+```
+
+The real value shows up once you chain multiple steps: `x |> f() |> g()` reads left-to-right as "start with x, do f, then do g" -- which is exactly how the rest of this module's dplyr code is written.
+
+```{r, echo=FALSE}
+quiz_question_ui("pipe_quiz", "What does x |> mean() do?", c(
+  "Passes x as the first argument to mean(), same as mean(x)" = "correct",
+  "Multiplies x by the result of mean()" = "wrong_multiply",
+  "Only works if x is a data frame" = "wrong_dataframe_only"
+))
+```
+
+## Module 4: Filtering and selecting
+
+Two of dplyr's most common verbs:
+
+- **`filter(df, condition)`** -- keep only rows matching a condition
+- **`select(df, col1, col2, ...)`** -- keep only specific columns
+
+Chained with the pipe:
+
+```{r filter-select-demo, echo=TRUE}
+fish_clean |>
+  filter(lake_site == "South Lake") |>
+  select(species, weight_g)
+```
+
+### Practice: filter and select
+
+Below, starting from `fish_clean`, keep only the rows where `species` is `"Bluegill"`, then keep only the `species` and `length_mm` columns. Replace both `FIXME`s.
+
+```{r, echo=FALSE}
+exercise_ui("filter_select_exercise", "fish_clean |>\n  filter(species == FIXME) |>\n  select(species, FIXME)")
+```
+
+Stuck, or want to double check your thinking? The tutor chat below is available any time -- before you submit, after a failed attempt, or even after you've already passed.
+
+```{r, echo=FALSE}
+accordion(
+  id = "tutor_accordion_m4_3",
+  open = FALSE,
+  accordion_panel(
+    title = "Ask the Tutor",
+    chat_ui(
+      "tutor_chat_m4_3",
+      placeholder = "Ask a question about this exercise...",
+      greeting = TUTOR_CHAT_GREETING,
+      allow_attachments = FALSE
+    )
+  )
+)
+```
+
+## Module 4: Adding columns and sorting
+
+Two more dplyr verbs:
+
+- **`mutate(df, new_col = expression)`** -- add a new column, calculated from existing ones
+- **`arrange(df, col)`** -- sort rows by a column (ascending by default; wrap it in `desc()` for descending)
+
+```{r mutate-arrange-demo, echo=TRUE}
+fish_clean |>
+  mutate(length_cm = length_mm / 10) |>
+  arrange(desc(weight_g))
+```
+
+### Practice: add a column and sort
+
+Below, starting from `fish_clean`, add a new column `weight_kg` equal to `weight_g` divided by `1000`, then sort the rows so the longest fish (by `length_mm`) comes first. Replace both `FIXME`s.
+
+```{r, echo=FALSE}
+exercise_ui("mutate_arrange_exercise", "fish_clean |>\n  mutate(weight_kg = FIXME) |>\n  arrange(FIXME)")
+```
+
+Stuck, or want to double check your thinking? The tutor chat below is available any time -- before you submit, after a failed attempt, or even after you've already passed.
+
+```{r, echo=FALSE}
+accordion(
+  id = "tutor_accordion_m4_4",
+  open = FALSE,
+  accordion_panel(
+    title = "Ask the Tutor",
+    chat_ui(
+      "tutor_chat_m4_4",
+      placeholder = "Ask a question about this exercise...",
+      greeting = TUTOR_CHAT_GREETING,
+      allow_attachments = FALSE
+    )
+  )
+)
+```
+
+## Module 4: Grouping and summarizing
+
+`group_by()` and `summarize()` are almost always used together: `group_by(df, col)` splits the data into groups by that column, and `summarize(df, stat = expression)` collapses each group down to one summary row.
+
+```{r group-summarize-demo, echo=TRUE}
+fish_clean |>
+  group_by(lake_site) |>
+  summarize(n_fish = n())
+```
+
+### Practice: average length per species
+
+Below, group `fish_clean` by `species`, then compute each species' mean `length_mm` in a column called `mean_length`. `length_mm` has a missing value, so `mean()` will need `na.rm = TRUE` to skip it rather than returning `NA`. Replace both `FIXME`s.
+
+```{r, echo=FALSE}
+exercise_ui("group_summarize_exercise", "fish_clean |>\n  group_by(FIXME) |>\n  summarize(mean_length = mean(length_mm, na.rm = FIXME))")
+```
+
+Stuck, or want to double check your thinking? The tutor chat below is available any time -- before you submit, after a failed attempt, or even after you've already passed.
+
+```{r, echo=FALSE}
+accordion(
+  id = "tutor_accordion_m4_5",
+  open = FALSE,
+  accordion_panel(
+    title = "Ask the Tutor",
+    chat_ui(
+      "tutor_chat_m4_5",
+      placeholder = "Ask a question about this exercise...",
+      greeting = TUTOR_CHAT_GREETING,
+      allow_attachments = FALSE
+    )
+  )
+)
+```
+
+## Module 4: Handling missing data
+
+You just saw one way to handle `NA`s -- `na.rm = TRUE` tells a function like `mean()` to skip them. Another common approach is to remove the incomplete rows entirely first, using `filter()` with `is.na()`:
+
+```{r, echo=FALSE}
+quiz_question_ui("na_quiz", "What does mean(c(10, NA, 30)) return, without any extra arguments?", c(
+  "20" = "wrong_20",
+  "NA" = "correct",
+  "40" = "wrong_40"
+))
+```
+
+`is.na(x)` returns `TRUE` wherever `x` is missing -- so `!is.na(x)` (the `!` means "not") keeps only the rows that **aren't** missing:
+
+```{r na-demo, echo=TRUE}
+fish_clean |> filter(!is.na(weight_g))
+```
+
+### Practice: average weight, missing values removed
+
+Below, filter `fish_clean` down to only the rows where `weight_g` is **not** missing, then compute the mean `weight_g` of the remaining rows in a column called `avg_weight`. Replace `FIXME`.
+
+```{r, echo=FALSE}
+exercise_ui("na_handling_exercise", "fish_clean |>\n  filter(FIXME) |>\n  summarize(avg_weight = mean(weight_g))")
+```
+
+Stuck, or want to double check your thinking? The tutor chat below is available any time -- before you submit, after a failed attempt, or even after you've already passed.
+
+```{r, echo=FALSE}
+accordion(
+  id = "tutor_accordion_m4_6",
+  open = FALSE,
+  accordion_panel(
+    title = "Ask the Tutor",
+    chat_ui(
+      "tutor_chat_m4_6",
+      placeholder = "Ask a question about this exercise...",
+      greeting = TUTOR_CHAT_GREETING,
+      allow_attachments = FALSE
+    )
+  )
+)
+```
+
+## Module 4: Putting it together
+
+You've now covered inspecting a data frame, renaming columns, indexing, the pipe, and dplyr's core verbs -- `filter()`, `select()`, `mutate()`, `arrange()`, `group_by()`, and `summarize()` -- plus handling missing values. This last exercise combines several of those into one realistic multi-step pipeline.
+
+### Practice: full cleaning pipeline
+
+Below, starting from `fish_clean`: filter out any row with a missing `length_mm`, group the rest by `lake_site`, compute each lake's mean `length_mm` in a column called `avg_length`, and sort the result so the lake with the **higher** average length comes first. Replace all three `FIXME`s.
+
+```{r, echo=FALSE}
+exercise_ui("module4_cumulative_exercise", "fish_clean |>\n  filter(FIXME) |>\n  group_by(FIXME) |>\n  summarize(avg_length = mean(length_mm)) |>\n  arrange(FIXME)")
+```
+
+Stuck, or want to double check your thinking? The tutor chat below is available any time -- before you submit, after a failed attempt, or even after you've already passed.
+
+```{r, echo=FALSE}
+accordion(
+  id = "tutor_accordion_m4_7",
+  open = FALSE,
+  accordion_panel(
+    title = "Ask the Tutor",
+    chat_ui(
+      "tutor_chat_m4_7",
+      placeholder = "Ask a question about this exercise...",
+      greeting = TUTOR_CHAT_GREETING,
+      allow_attachments = FALSE
+    )
+  )
+)
+```
+
+## Module 4: Wrapping up
+
+You've now taken a genuinely messy data frame and cleaned it up end to end: inspected it, renamed its columns, subset it, and used the pipe with `filter()`, `select()`, `mutate()`, `arrange()`, `group_by()`, and `summarize()` to answer real questions from it -- including handling missing data along the way.
+
+### Up next
+
+Module 5 moves into actually *doing something* with cleaned-up data: basic plots with `ggplot2`, and a light-touch introduction to a few habits (script organization, file naming, and version control awareness) that carry into real work beyond this course.
+
+```{r setup-module5, context="setup", include=FALSE}
+library(ggplot2)
+library(rlang)
+
+# Module 5 reuses the same fish_clean data frame Module 4 already built and
+# placed in globalenv() above -- no need to recreate it here now that both
+# modules live in the same document/session (each module used to be its own
+# separate deployment, which is why the original per-module version of this
+# file rebuilt fish_clean from scratch instead of reusing Module 4's).
+
+# Grading logic for each exercise. A ggplot object's mapping (aes()) is
+# stored as quosures -- rlang::as_label() turns e.g. aes(x = length_mm)'s
+# stored mapping back into the plain string "length_mm" for comparison.
+# log_attempt_and_maybe_open_chat() and wire_tutor_chat() themselves are
+# shared across modules -- see R/tutor_utils.R.
+
+mapping_label <- function(mapping, aesthetic) {
+  if (is.null(mapping[[aesthetic]])) return(NA_character_)
+  rlang::as_label(mapping[[aesthetic]])
+}
+
+evaluate_scatter_exercise <- function(user_code, result, stage) {
+  uses_geom_point <- grepl("geom_point\\s*\\(", user_code)
+  is_ggplot <- inherits(result, "ggplot")
+  has_point_layer <- is_ggplot && any(vapply(result$layers, function(l) inherits(l$geom, "GeomPoint"), logical(1)))
+  x_ok <- is_ggplot && identical(mapping_label(result$mapping, "x"), "length_mm")
+  y_ok <- is_ggplot && identical(mapping_label(result$mapping, "y"), "weight_g")
+
+  passed <- uses_geom_point && is_ggplot && has_point_layer && x_ok && y_ok
+
+  feedback_message <- if (passed) {
+    "That's a scatter plot of length vs. weight -- exactly right."
+  } else if (identical(stage, "error_check")) {
+    "That code doesn't run as-is -- check that aes()'s arguments and geom_point() are complete, valid R."
+  } else if (!is_ggplot) {
+    "This should produce a ggplot object -- make sure ggplot(fish_clean, aes(...)) is still the start of the expression."
+  } else if (!has_point_layer) {
+    "This needs a geom_point() layer to actually draw the scatter plot."
+  } else if (!x_ok) {
+    "The x-axis isn't mapped to length_mm yet -- check aes()'s x argument."
+  } else {
+    "Close -- the y-axis isn't mapped to weight_g yet, check aes()'s y argument."
+  }
+
+  list(passed = passed, message = feedback_message)
+}
+
+evaluate_bar_exercise <- function(user_code, result, stage) {
+  uses_group_by <- grepl("group_by\\s*\\(", user_code)
+  uses_geom_col <- grepl("geom_col\\s*\\(", user_code)
+  is_ggplot <- inherits(result, "ggplot")
+  has_col_layer <- is_ggplot && any(vapply(result$layers, function(l) inherits(l$geom, "GeomCol"), logical(1)))
+  right_groups <- is_ggplot && is.data.frame(result$data) && nrow(result$data) == 3
+  x_ok <- is_ggplot && identical(mapping_label(result$mapping, "x"), "species")
+  y_ok <- is_ggplot && identical(mapping_label(result$mapping, "y"), "mean_weight")
+
+  passed <- uses_group_by && uses_geom_col && is_ggplot && has_col_layer && right_groups && x_ok && y_ok
+
+  feedback_message <- if (passed) {
+    "One bar per species, showing each one's mean weight -- exactly right."
+  } else if (identical(stage, "error_check")) {
+    "That code doesn't run as-is -- work through each step of the pipeline, same as Module 4."
+  } else if (!uses_group_by || !right_groups) {
+    "Check the group_by() step -- there are 3 species in this data, and something else is producing a different number of bars."
+  } else if (!uses_geom_col || !has_col_layer) {
+    "This needs a geom_col() layer to draw the bars."
+  } else if (!x_ok) {
+    "The x-axis isn't mapped to species yet -- check aes()'s x argument."
+  } else {
+    "Close -- the y-axis isn't mapped to mean_weight yet, check aes()'s y argument."
+  }
+
+  list(passed = passed, message = feedback_message)
+}
+
+evaluate_histogram_exercise <- function(user_code, result, stage) {
+  uses_geom_histogram <- grepl("geom_histogram\\s*\\(", user_code)
+  is_ggplot <- inherits(result, "ggplot")
+  has_hist_layer <- is_ggplot && any(vapply(result$layers, function(l) inherits(l$geom, "GeomBar") || inherits(l$geom, "GeomHistogram") || "GeomBar" %in% class(l$geom), logical(1)))
+  x_ok <- is_ggplot && identical(mapping_label(result$mapping, "x"), "length_mm")
+
+  passed <- uses_geom_histogram && is_ggplot && has_hist_layer && x_ok
+
+  feedback_message <- if (passed) {
+    "That's a histogram of length_mm -- exactly right."
+  } else if (identical(stage, "error_check")) {
+    "That code doesn't run as-is -- check that aes() and geom_histogram() are complete, valid R."
+  } else if (!is_ggplot) {
+    "This should produce a ggplot object -- make sure ggplot(fish_clean, aes(...)) is still the start of the expression."
+  } else if (!has_hist_layer) {
+    "This needs a geom_histogram() layer to actually draw the histogram."
+  } else {
+    "Close -- the x-axis isn't mapped to length_mm yet, check aes()'s x argument."
+  }
+
+  list(passed = passed, message = feedback_message)
+}
+
+evaluate_cumulative_plot_exercise <- function(user_code, result, stage) {
+  uses_filter <- grepl("filter\\s*\\(", user_code)
+  uses_geom_point <- grepl("geom_point\\s*\\(", user_code)
+  uses_labs <- grepl("labs\\s*\\(", user_code)
+  is_ggplot <- inherits(result, "ggplot")
+  has_point_layer <- is_ggplot && any(vapply(result$layers, function(l) inherits(l$geom, "GeomPoint"), logical(1)))
+  right_data <- is_ggplot && is.data.frame(result$data) && nrow(result$data) == 4 &&
+    "species" %in% names(result$data) && all(result$data$species == "Bluegill")
+  has_title <- is_ggplot && is.character(result$labels$title) && nzchar(trimws(result$labels$title))
+
+  passed <- uses_filter && uses_geom_point && uses_labs && is_ggplot && has_point_layer && right_data && has_title
+
+  feedback_message <- if (passed) {
+    "That's the full pipeline -- filtered to just Bluegill, plotted, and titled."
+  } else if (identical(stage, "error_check")) {
+    "That code doesn't run as-is -- work through it one step at a time, same as you've done in earlier modules."
+  } else if (!uses_filter || !right_data) {
+    "Check the filter() step -- this plot should only include the 4 Bluegill rows."
+  } else if (!uses_geom_point || !has_point_layer) {
+    "This still needs a geom_point() layer to draw the scatter plot."
+  } else if (!uses_labs || !has_title) {
+    "The plot looks right, but it still needs a title -- add labs(title = \"...\") with any title you like."
+  } else {
+    "Close -- double check each step of the pipeline."
+  }
+
+  list(passed = passed, message = feedback_message)
+}
+```
+
+```{r, context="server"}
+# --- Tutor chat wiring --------------------------------------------------
+wire_tutor_chat("module5_scatter", "tutor_chat_m5_1", "tutor_accordion_m5_1", "Ask the Tutor", input, output, session)
+wire_tutor_chat("module5_bar", "tutor_chat_m5_2", "tutor_accordion_m5_2", "Ask the Tutor", input, output, session)
+wire_tutor_chat("module5_histogram", "tutor_chat_m5_3", "tutor_accordion_m5_3", "Ask the Tutor", input, output, session)
+wire_tutor_chat("module5_cumulative", "tutor_chat_m5_4", "tutor_accordion_m5_4", "Ask the Tutor", input, output, session)
+```
+
+```{r, context="server"}
+# --- Quiz question wiring ------------------------------------------------
+quiz_question_server(input, output, session, "ggplot_grammar_quiz", list(
+  correct = list(correct = TRUE, message = "Correct!"),
+  wrong_speed = list(correct = FALSE, message = "aes() doesn't affect how fast the code runs -- it's purely about what's shown and how."),
+  wrong_load = list(correct = FALSE, message = "aes() doesn't load or import anything -- that's a separate step.")
+))
+
+quiz_question_server(input, output, session, "markdown_quiz", list(
+  correct = list(correct = TRUE, message = "Correct!"),
+  wrong_speed = list(correct = FALSE, message = "R Markdown doesn't make code run faster -- it's about presentation, not performance."),
+  wrong_password = list(correct = FALSE, message = "R Markdown files aren't for storing credentials -- that's what .Renviron (and never committing it to git) is for.")
+))
+
+quiz_question_server(input, output, session, "scripts_quiz", list(
+  correct = list(correct = TRUE, message = "Correct!"),
+  wrong_required = list(correct = FALSE, message = "R scripts run from anywhere -- the issue with the Desktop is organization, not a hard requirement."),
+  wrong_speed = list(correct = FALSE, message = "Where a script is saved doesn't affect how fast it runs.")
+))
+
+quiz_question_server(input, output, session, "naming_files_quiz", list(
+  correct = list(correct = TRUE, message = "Correct!"),
+  wrong_final = list(correct = FALSE, message = "Names like that (with \"final\", spaces, and version numbers in parentheses) are exactly what to avoid -- they don't say what the file actually does, and stack up confusingly over time."),
+  wrong_vague = list(correct = FALSE, message = "A name like that doesn't describe what the file does at all -- six months from now, you (or a teammate) would have no way to tell.")
+))
+
+quiz_question_server(input, output, session, "version_control_quiz", list(
+  correct = list(correct = TRUE, message = "Correct!"),
+  wrong_autofix = list(correct = FALSE, message = "Git doesn't fix bugs for you -- it just keeps a history of every change, bugs included."),
+  wrong_standalone = list(correct = FALSE, message = "Git is unrelated to whether RStudio is installed -- it's about tracking change history, not packaging software.")
+))
+```
+
+```{r, context="server"}
+# --- Exercise wiring -------------------------------------------------------
+# has_plot_output = TRUE here so a ggplot result is actually rendered, not
+# printed as text.
+
+exercise_server(
+  input, output, session, "scatter_exercise", "module5_scatter", "tutor_accordion_m5_1",
+  starting_code = "ggplot(fish_clean, aes(x = FIXME, y = FIXME)) +\n  geom_point()",
+  evaluate_fn = function(user_code, result, envir, stage) evaluate_scatter_exercise(user_code, result, stage),
+  has_plot_output = TRUE
+)
+
+exercise_server(
+  input, output, session, "bar_exercise", "module5_bar", "tutor_accordion_m5_2",
+  starting_code = "fish_clean |>\n  group_by(FIXME) |>\n  summarize(mean_weight = mean(weight_g, na.rm = TRUE)) |>\n  ggplot(aes(x = FIXME, y = FIXME)) +\n  geom_col()",
+  evaluate_fn = function(user_code, result, envir, stage) evaluate_bar_exercise(user_code, result, stage),
+  has_plot_output = TRUE
+)
+
+exercise_server(
+  input, output, session, "histogram_exercise", "module5_histogram", "tutor_accordion_m5_3",
+  starting_code = "ggplot(fish_clean, aes(x = FIXME)) +\n  geom_histogram(bins = 8)",
+  evaluate_fn = function(user_code, result, envir, stage) evaluate_histogram_exercise(user_code, result, stage),
+  has_plot_output = TRUE
+)
+
+exercise_server(
+  input, output, session, "cumulative_plot_exercise", "module5_cumulative", "tutor_accordion_m5_4",
+  starting_code = "fish_clean |>\n  filter(FIXME) |>\n  ggplot(aes(x = length_mm, y = weight_g)) +\n  geom_point() +\n  labs(title = FIXME)",
+  evaluate_fn = function(user_code, result, envir, stage) evaluate_cumulative_plot_exercise(user_code, result, stage),
+  has_plot_output = TRUE
+)
+```
+
+## Module 5: Welcome back
+
+Module 4 got `fish_clean` -- the same fish survey data you'll use again here -- inspected, cleaned, and summarized. This module is where you actually *do something* with it: turn it into plots with `ggplot2`. Along the way, you'll also pick up a handful of habits (naming files, organizing scripts, recognizing R Markdown, and what version control is for) that matter for real work beyond this course, even though none of them involve writing new code.
+
+## Module 5: Basic plots with ggplot2
+
+Every `ggplot2` plot follows the same basic grammar:
+
+- **`ggplot(data, aes(...))`** -- start a plot, and tell it which columns to use with `aes()` (short for "aesthetic mapping") -- which column goes on the x-axis, which on the y-axis, and so on
+- **`+ geom_...()`** -- add a "geometry" layer that actually draws something: `geom_point()` for a scatter plot, `geom_col()` for bars, `geom_histogram()` for a distribution
+
+These pieces are combined with `+`, not the pipe:
+
+```{r ggplot-demo, echo=TRUE, fig.height=3}
+ggplot(fish_clean, aes(x = species, y = length_mm)) +
+  geom_point()
+```
+
+```{r, echo=FALSE}
+quiz_question_ui("ggplot_grammar_quiz", "What does aes() tell ggplot to do?", c(
+  "Map data columns to visual properties like x, y, or color" = "correct",
+  "Run the plotting code faster" = "wrong_speed",
+  "Load the ggplot2 package" = "wrong_load"
+))
+```
+
+### Practice: scatter plot
+
+Below, create a scatter plot of `fish_clean` with `length_mm` on the x-axis and `weight_g` on the y-axis, replacing both `FIXME`s.
+
+```{r, echo=FALSE}
+exercise_ui("scatter_exercise", "ggplot(fish_clean, aes(x = FIXME, y = FIXME)) +\n  geom_point()", has_plot_output = TRUE)
+```
+
+Stuck, or want to double check your thinking? The tutor chat below is available any time -- before you submit, after a failed attempt, or even after you've already passed.
+
+```{r, echo=FALSE}
+accordion(
+  id = "tutor_accordion_m5_1",
+  open = FALSE,
+  accordion_panel(
+    title = "Ask the Tutor",
+    chat_ui(
+      "tutor_chat_m5_1",
+      placeholder = "Ask a question about this exercise...",
+      greeting = TUTOR_CHAT_GREETING,
+      allow_attachments = FALSE
+    )
+  )
+)
+```
+
+## Module 5: Bar charts from summarized data
+
+A bar chart usually plots *summarized* data, not raw rows -- which is exactly what Module 4's `group_by()` + `summarize()` produce. You can pipe a summary straight into `ggplot()`:
+
+```{r bar-demo, echo=TRUE, fig.height=3}
+fish_clean |>
+  group_by(lake_site) |>
+  summarize(mean_length = mean(length_mm, na.rm = TRUE)) |>
+  ggplot(aes(x = lake_site, y = mean_length)) +
+  geom_col()
+```
+
+### Practice: mean weight per species
+
+Below, group `fish_clean` by `species`, summarize each group's mean `weight_g` into `mean_weight` (already written for you), then plot the result as a bar chart with `species` on the x-axis and `mean_weight` on the y-axis. Replace all three `FIXME`s.
+
+```{r, echo=FALSE}
+exercise_ui("bar_exercise", "fish_clean |>\n  group_by(FIXME) |>\n  summarize(mean_weight = mean(weight_g, na.rm = TRUE)) |>\n  ggplot(aes(x = FIXME, y = FIXME)) +\n  geom_col()", has_plot_output = TRUE)
+```
+
+Stuck, or want to double check your thinking? The tutor chat below is available any time -- before you submit, after a failed attempt, or even after you've already passed.
+
+```{r, echo=FALSE}
+accordion(
+  id = "tutor_accordion_m5_2",
+  open = FALSE,
+  accordion_panel(
+    title = "Ask the Tutor",
+    chat_ui(
+      "tutor_chat_m5_2",
+      placeholder = "Ask a question about this exercise...",
+      greeting = TUTOR_CHAT_GREETING,
+      allow_attachments = FALSE
+    )
+  )
+)
+```
+
+## Module 5: Histograms
+
+A histogram shows the *distribution* of a single numeric column -- how its values are spread out -- by grouping values into bins and counting how many fall in each one:
+
+```{r histogram-demo, echo=TRUE, fig.height=3}
+ggplot(fish_clean, aes(x = weight_g)) +
+  geom_histogram(bins = 6)
+```
+
+### Practice: histogram of length
+
+Below, create a histogram of `fish_clean`'s `length_mm` column, replacing `FIXME`.
+
+```{r, echo=FALSE}
+exercise_ui("histogram_exercise", "ggplot(fish_clean, aes(x = FIXME)) +\n  geom_histogram(bins = 8)", has_plot_output = TRUE)
+```
+
+Stuck, or want to double check your thinking? The tutor chat below is available any time -- before you submit, after a failed attempt, or even after you've already passed.
+
+```{r, echo=FALSE}
+accordion(
+  id = "tutor_accordion_m5_3",
+  open = FALSE,
+  accordion_panel(
+    title = "Ask the Tutor",
+    chat_ui(
+      "tutor_chat_m5_3",
+      placeholder = "Ask a question about this exercise...",
+      greeting = TUTOR_CHAT_GREETING,
+      allow_attachments = FALSE
+    )
+  )
+)
+```
+
+## Module 5: Markdown awareness
+
+You've been reading formatted text like this the whole course -- headings, bullet points, bold text -- inside what's actually an **R Markdown** (`.Rmd`) document (this tutorial is one). R Markdown combines regular text with R code and that code's output, all in one file that renders into a finished report.
+
+You won't be asked to author R Markdown documents in this course -- just recognize what one is and what it's for, since scripts and reports you're handed later on may well be written as one.
+
+```{r, echo=FALSE}
+quiz_question_ui("markdown_quiz", "What is an R Markdown (.Rmd) file mainly used for?", c(
+  "Combining code, its output, and written text into one formatted document or report" = "correct",
+  "Running R code faster than a normal script" = "wrong_speed",
+  "Storing a database connection's password" = "wrong_password"
+))
+```
+
+## Module 5: Saving and organizing scripts
+
+A plain R script (a `.R` file) is just your code, without any of R Markdown's surrounding text. Where you save one matters more than it might seem: keeping scripts inside your project's folder (not scattered on the Desktop or in Downloads) keeps everything a project needs in one place, so file paths -- like the working directory concepts from Module 1 -- keep working, and nothing gets lost or orphaned.
+
+```{r, echo=FALSE}
+quiz_question_ui("scripts_quiz", "Why is it better to save your R scripts inside your project folder rather than on the Desktop?", c(
+  "Keeps all the files a project needs together, so paths (like working directory) still work and nothing gets lost" = "correct",
+  "R scripts only run correctly if saved on the Desktop" = "wrong_required",
+  "It makes the script run faster" = "wrong_speed"
+))
+```
+
+## Module 5: File naming conventions
+
+A good file name describes what the file actually does, using lowercase words separated by `_` or `-`, with no spaces or special characters -- similar to this course's `snake_case` variable naming from Module 3. Avoid vague names (`asdf.R`) and especially avoid manual "versioning" in the name itself (`final_v2_FINAL.R`) -- that gets confusing fast, and it's exactly the problem real version control (next section) solves properly.
+
+```{r, echo=FALSE}
+quiz_question_ui("naming_files_quiz", "Which of these is the best file name for a script that cleans survey data?", c(
+  "clean_survey_data.R" = "correct",
+  "Final FINAL script (2).R" = "wrong_final",
+  "asdf.R" = "wrong_vague"
+))
+```
+
+## Module 5: Version control awareness
+
+**Version control** (most commonly **Git**, often paired with **GitHub** for hosting) tracks every change made to a project's files over time -- who changed what, when, and why -- so you can see a file's full history and undo a mistake instead of relying on file names like `final_v2.R` to keep track manually. This course doesn't have you use Git hands-on -- just know that it exists and roughly what it's for, since it's standard in real collaborative work.
+
+```{r, echo=FALSE}
+quiz_question_ui("version_control_quiz", "What is the main purpose of a version control system like Git?", c(
+  "Tracking changes to files over time so you can see history and undo mistakes" = "correct",
+  "Automatically fixing bugs in your code" = "wrong_autofix",
+  "Making your R scripts run without RStudio installed" = "wrong_standalone"
+))
+```
+
+## Module 5: Putting it together
+
+This last exercise combines a data-cleaning step from Module 4 with this module's plotting skills, plus one more small addition: giving a plot a title with `labs(title = "...")`.
+
+### Practice: filtered scatter plot with a title
+
+Below, starting from `fish_clean`: filter down to just the `"Bluegill"` rows, then create a scatter plot of `length_mm` vs. `weight_g`, and give it any title you like using `labs()`. Replace all three `FIXME`s (the third can be any text you want, in quotes).
+
+```{r, echo=FALSE}
+exercise_ui("cumulative_plot_exercise", "fish_clean |>\n  filter(FIXME) |>\n  ggplot(aes(x = length_mm, y = weight_g)) +\n  geom_point() +\n  labs(title = FIXME)", has_plot_output = TRUE)
+```
+
+Stuck, or want to double check your thinking? The tutor chat below is available any time -- before you submit, after a failed attempt, or even after you've already passed.
+
+```{r, echo=FALSE}
+accordion(
+  id = "tutor_accordion_m5_4",
+  open = FALSE,
+  accordion_panel(
+    title = "Ask the Tutor",
+    chat_ui(
+      "tutor_chat_m5_4",
+      placeholder = "Ask a question about this exercise...",
+      greeting = TUTOR_CHAT_GREETING,
+      allow_attachments = FALSE
+    )
+  )
+)
+```
+
+## Module 5: Wrapping up
+
+That's the full course: from installing R and RStudio, through running and reading code, working with data, cleaning it up with dplyr, and now actually producing plots from it with ggplot2 -- plus the surrounding habits (script organization, file naming, R Markdown and version control awareness) that carry into real work beyond this tutorial.
+
+From here, you're ready to work with the scripts, data, and instructions you'll be given in the rest of this course -- not by memorizing every function, but by recognizing what's going on and knowing how to ask for help when something doesn't make sense.

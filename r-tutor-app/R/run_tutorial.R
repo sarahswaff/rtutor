@@ -1,10 +1,14 @@
-# Launches a tutorial module standalone (outside RStudio's "Run Document"
-# button), for testing in a browser. Edit MODULE_FILE below to switch modules.
+# Launches a tutorial standalone (outside RStudio's "Run Document" button),
+# for testing in a browser. Edit MODULE_FILE below to switch which .Rmd it
+# serves -- "course.Rmd" (the merged, currently-deployed all-5-modules
+# tutorial) is the default; the original per-module files
+# (module_1.Rmd..module_5.Rmd) are kept for reference and still work here
+# too.
 #
 # Usage: Rscript R/run_tutorial.R
 # Then open http://127.0.0.1:7412 in a browser.
 
-MODULE_FILE <- "module_5.Rmd"
+MODULE_FILE <- "course.Rmd"
 PROJECT_ROOT <- "C:/Users/sarah/OneDrive/Documents/R_tutor/r-tutor-app"
 
 readRenviron(file.path(PROJECT_ROOT, ".Renviron"))
