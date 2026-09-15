@@ -632,38 +632,6 @@
         "RemoteSha": "0.5.2"
       }
     },
-    "crayon": {
-      "Source": "CRAN",
-      "Repository": "https://cloud.r-project.org",
-      "description": {
-        "Package": "crayon",
-        "Title": "Colored Terminal Output",
-        "Version": "1.5.3",
-        "Authors@R": "c(\n    person(\"Gábor\", \"Csárdi\", , \"csardi.gabor@gmail.com\", role = c(\"aut\", \"cre\")),\n    person(\"Brodie\", \"Gaslam\", , \"brodie.gaslam@yahoo.com\", role = \"ctb\"),\n    person(\"Posit Software, PBC\", role = c(\"cph\", \"fnd\"))\n  )",
-        "Description": "The crayon package is now superseded. Please use the 'cli'\n    package for new projects.  Colored terminal output on terminals that\n    support 'ANSI' color and highlight codes. It also works in 'Emacs'\n    'ESS'. 'ANSI' color support is automatically detected. Colors and\n    highlighting can be combined and nested. New styles can also be\n    created easily.  This package was inspired by the 'chalk' 'JavaScript'\n    project.",
-        "License": "MIT + file LICENSE",
-        "URL": "https://r-lib.github.io/crayon/, https://github.com/r-lib/crayon",
-        "BugReports": "https://github.com/r-lib/crayon/issues",
-        "Imports": "grDevices, methods, utils",
-        "Suggests": "mockery, rstudioapi, testthat, withr",
-        "Config/Needs/website": "tidyverse/tidytemplate",
-        "Encoding": "UTF-8",
-        "RoxygenNote": "7.3.1",
-        "Collate": "'aaa-rstudio-detect.R' 'aaaa-rematch2.R'\n'aab-num-ansi-colors.R' 'aac-num-ansi-colors.R' 'ansi-256.R'\n'ansi-palette.R' 'combine.R' 'string.R' 'utils.R'\n'crayon-package.R' 'disposable.R' 'enc-utils.R' 'has_ansi.R'\n'has_color.R' 'link.R' 'styles.R' 'machinery.R' 'parts.R'\n'print.R' 'style-var.R' 'show.R' 'string_operations.R'",
-        "NeedsCompilation": "no",
-        "Packaged": "2024-06-20 11:49:08 UTC; gaborcsardi",
-        "Author": "Gábor Csárdi [aut, cre],\n  Brodie Gaslam [ctb],\n  Posit Software, PBC [cph, fnd]",
-        "Maintainer": "Gábor Csárdi <csardi.gabor@gmail.com>",
-        "Repository": "CRAN",
-        "Date/Publication": "2024-06-20 13:00:02 UTC",
-        "Built": "R 4.5.2; ; 2026-01-21 02:12:32 UTC; windows",
-        "RemoteType": "standard",
-        "RemotePkgRef": "crayon",
-        "RemoteRef": "crayon",
-        "RemoteRepos": "https://cran.rstudio.com",
-        "RemoteSha": "1.5.3"
-      }
-    },
     "curl": {
       "Source": "CRAN",
       "Repository": "https://cloud.r-project.org",
@@ -699,36 +667,6 @@
         "RemoteSha": "7.0.0"
       }
     },
-    "diffobj": {
-      "Source": "CRAN",
-      "Repository": "https://cloud.r-project.org",
-      "description": {
-        "Package": "diffobj",
-        "Type": "Package",
-        "Title": "Diffs for R Objects",
-        "Description": "Generate a colorized diff of two R objects for an intuitive\n    visualization of their differences.",
-        "Version": "0.3.9",
-        "Authors@R": "c(\n    person(\n    \"Brodie\", \"Gaslam\", email=\"brodie.gaslam@yahoo.com\",\n    role=c(\"aut\", \"cre\")),\n    person(\n    \"Michael B.\", \"Allen\", email=\"ioplex@gmail.com\",\n    role=c(\"ctb\", \"cph\"),\n    comment=\"Original C implementation of Myers Diff Algorithm\"))",
-        "Depends": "R (>= 4.1.0)",
-        "License": "GPL-2 | GPL-3",
-        "URL": "https://github.com/brodieG/diffobj",
-        "BugReports": "https://github.com/brodieG/diffobj/issues",
-        "VignetteBuilder": "knitr",
-        "Encoding": "UTF-8",
-        "Suggests": "knitr, rmarkdown",
-        "Collate": "'capt.R' 'options.R' 'pager.R' 'check.R' 'finalizer.R'\n'misc.R' 'html.R' 'styles.R' 's4.R' 'core.R' 'diff.R' 'get.R'\n'guides.R' 'hunks.R' 'layout.R' 'myerssimple.R' 'rdiff.R'\n'rds.R' 'set.R' 'subset.R' 'summmary.R' 'system.R' 'text.R'\n'tochar.R' 'trim.R' 'word.R'",
-        "Imports": "crayon (>= 1.3.2), tools, methods, utils, stats",
-        "Config/roxygen2/version": "8.0.0",
-        "NeedsCompilation": "yes",
-        "Packaged": "2026-09-11 17:57:42 UTC; brodie",
-        "Author": "Brodie Gaslam [aut, cre],\n  Michael B. Allen [ctb, cph] (Original C implementation of Myers Diff\n    Algorithm)",
-        "Maintainer": "Brodie Gaslam <brodie.gaslam@yahoo.com>",
-        "Repository": "CRAN",
-        "Date/Publication": "2026-09-11 21:00:16 UTC",
-        "Built": "R 4.5.3; x86_64-w64-mingw32; 2026-09-11 23:52:47 UTC; windows",
-        "Archs": "x64"
-      }
-    },
     "digest": {
       "Source": "CRAN",
       "Repository": "https://cloud.r-project.org",
@@ -760,32 +698,6 @@
         "RemoteRef": "digest",
         "RemoteRepos": "https://cran.rstudio.com",
         "RemoteSha": "0.6.39"
-      }
-    },
-    "ellipsis": {
-      "Source": "CRAN",
-      "Repository": "https://cloud.r-project.org",
-      "description": {
-        "Package": "ellipsis",
-        "Version": "0.3.3",
-        "Title": "Tools for Working with ...",
-        "Description": "The ellipsis is a powerful tool for extending functions. Unfortunately \n    this power comes at a cost: misspelled arguments will be silently ignored. \n    The ellipsis package provides a collection of functions to catch problems\n    and alert the user.",
-        "Authors@R": "c(\n      person(\"Hadley\", \"Wickham\", , \"hadley@rstudio.com\", role = c(\"aut\", \"cre\")),\n      person(\"RStudio\", role = \"cph\")\n    )",
-        "License": "MIT + file LICENSE",
-        "Encoding": "UTF-8",
-        "RoxygenNote": "7.1.1",
-        "URL": "https://ellipsis.r-lib.org, https://github.com/r-lib/ellipsis",
-        "BugReports": "https://github.com/r-lib/ellipsis/issues",
-        "Depends": "R (>= 3.2)",
-        "Imports": "rlang (>= 1.1.7)",
-        "Suggests": "covr, testthat",
-        "NeedsCompilation": "no",
-        "Packaged": "2026-04-03 07:11:22 UTC; lionel",
-        "Author": "Hadley Wickham [aut, cre],\n  RStudio [cph]",
-        "Maintainer": "Hadley Wickham <hadley@rstudio.com>",
-        "Repository": "CRAN",
-        "Date/Publication": "2026-04-04 05:11:12 UTC",
-        "Built": "R 4.5.3; ; 2026-09-09 02:16:08 UTC; windows"
       }
     },
     "ellmer": {
@@ -1029,49 +941,6 @@
         "RemoteRef": "glue",
         "RemoteRepos": "https://cran.rstudio.com",
         "RemoteSha": "1.8.0"
-      }
-    },
-    "gradethis": {
-      "Source": "github",
-      "Repository": null,
-      "description": {
-        "Type": "Package",
-        "Package": "gradethis",
-        "Title": "Automated Feedback for Student Exercises in 'learnr' Tutorials",
-        "Version": "0.2.14",
-        "Authors@R": "c(\n    person(\"Garrick\", \"Aden-Buie\", , \"garrick@posit.co\", role = c(\"aut\", \"cre\"),\n           comment = c(ORCID = \"0000-0002-7111-0077\")),\n    person(\"Daniel\", \"Chen\", , \"daniel.chen@posit.co\", role = \"aut\",\n           comment = c(ORCID = \"0000-0003-3857-1741\")),\n    person(\"Garrett\", \"Grolemund\", , \"garrett@posit.co\", role = c(\"ccp\", \"aut\"),\n           comment = c(ORCID = \"0000-0002-7765-6011\")),\n    person(\"Alexander\", \"Rossell Hayes\", , \"alex.rossellhayes@posit.co\", role = \"aut\",\n           comment = c(ORCID = \"0000-0001-9412-0457\")),\n    person(\"Barret\", \"Schloerke\", , \"barret@posit.co\", role = \"aut\",\n           comment = c(ORCID = \"0000-0001-9986-114X\")),\n    person(, \"Posit, PBC\", role = c(\"cph\", \"fnd\"))\n  )",
-        "Description": "Pairing with the 'learnr' R package, 'gradethis' provides\n    multiple methods to grade 'learnr' exercises.  To learn more about\n    'learnr' tutorials, please visit <https://rstudio.github.io/learnr/>.",
-        "License": "MIT + file LICENSE",
-        "URL": "https://pkgs.rstudio.com/gradethis/,\nhttps://rstudio.github.io/learnr/,\nhttps://github.com/rstudio/gradethis",
-        "BugReports": "https://github.com/rstudio/gradethis/issues",
-        "Depends": "R (>= 3.2.0)",
-        "Imports": "checkmate, commonmark, ellipsis, glue, htmltools, learnr (>=\n0.10.1.9008), lifecycle, magrittr, purrr, rlang, rstudioapi,\nutils, waldo, withr",
-        "Suggests": "DBI, ggcheck (>= 0.0.5), ggplot2, knitr, rmarkdown, spelling,\ntestthat (>= 3.0.0)",
-        "VignetteBuilder": "knitr",
-        "Remotes": "rstudio/ggcheck, rstudio/learnr",
-        "Config/Needs/connect": "rsconnect",
-        "Config/Needs/coverage": "covr",
-        "Config/Needs/website": "pkgdown, tidyverse/tidytemplate",
-        "Config/roxygen2/version": "8.0.0",
-        "Config/testthat/edition": "3",
-        "Encoding": "UTF-8",
-        "Language": "en-US",
-        "Roxygen": "list(markdown = TRUE)",
-        "RemoteType": "github",
-        "RemoteHost": "api.github.com",
-        "RemoteRepo": "gradethis",
-        "RemoteUsername": "rstudio",
-        "RemoteRef": "HEAD",
-        "RemoteSha": "48aaf8957cdac09f45f540f841a6bcd55ac5e2f1",
-        "GithubRepo": "gradethis",
-        "GithubUsername": "rstudio",
-        "GithubRef": "HEAD",
-        "GithubSHA1": "48aaf8957cdac09f45f540f841a6bcd55ac5e2f1",
-        "NeedsCompilation": "no",
-        "Packaged": "2026-09-13 19:37:53 UTC; sarah",
-        "Author": "Garrick Aden-Buie [aut, cre] (ORCID:\n    <https://orcid.org/0000-0002-7111-0077>),\n  Daniel Chen [aut] (ORCID: <https://orcid.org/0000-0003-3857-1741>),\n  Garrett Grolemund [ccp, aut] (ORCID:\n    <https://orcid.org/0000-0002-7765-6011>),\n  Alexander Rossell Hayes [aut] (ORCID:\n    <https://orcid.org/0000-0001-9412-0457>),\n  Barret Schloerke [aut] (ORCID: <https://orcid.org/0000-0001-9986-114X>),\n  Posit, PBC [cph, fnd]",
-        "Maintainer": "Garrick Aden-Buie <garrick@posit.co>",
-        "Built": "R 4.5.2; ; 2026-09-13 19:37:54 UTC; windows"
       }
     },
     "highr": {
@@ -1857,45 +1726,6 @@
         "RemoteSha": "1.5.0"
       }
     },
-    "purrr": {
-      "Source": "CRAN",
-      "Repository": "https://cloud.r-project.org",
-      "description": {
-        "Package": "purrr",
-        "Title": "Functional Programming Tools",
-        "Version": "1.2.1",
-        "Authors@R": "c(\n    person(\"Hadley\", \"Wickham\", , \"hadley@posit.co\", role = c(\"aut\", \"cre\"),\n           comment = c(ORCID = \"0000-0003-4757-117X\")),\n    person(\"Lionel\", \"Henry\", , \"lionel@posit.co\", role = \"aut\"),\n    person(\"Posit Software, PBC\", role = c(\"cph\", \"fnd\"),\n           comment = c(ROR = \"https://ror.org/03wc8by49\"))\n  )",
-        "Description": "A complete and consistent functional programming toolkit for\n    R.",
-        "License": "MIT + file LICENSE",
-        "URL": "https://purrr.tidyverse.org/, https://github.com/tidyverse/purrr",
-        "BugReports": "https://github.com/tidyverse/purrr/issues",
-        "Depends": "R (>= 4.1)",
-        "Imports": "cli (>= 3.6.1), lifecycle (>= 1.0.3), magrittr (>= 1.5.0),\nrlang (>= 1.1.1), vctrs (>= 0.6.3)",
-        "Suggests": "carrier (>= 0.3.0), covr, dplyr (>= 0.7.8), httr, knitr,\nlubridate, mirai (>= 2.5.1), rmarkdown, testthat (>= 3.0.0),\ntibble, tidyselect",
-        "LinkingTo": "cli",
-        "VignetteBuilder": "knitr",
-        "Biarch": "true",
-        "Config/build/compilation-database": "true",
-        "Config/Needs/website": "tidyverse/tidytemplate, tidyr",
-        "Config/testthat/edition": "3",
-        "Config/testthat/parallel": "TRUE",
-        "Encoding": "UTF-8",
-        "RoxygenNote": "7.3.3",
-        "NeedsCompilation": "yes",
-        "Packaged": "2026-01-08 20:56:46 UTC; hadleywickham",
-        "Author": "Hadley Wickham [aut, cre] (ORCID:\n    <https://orcid.org/0000-0003-4757-117X>),\n  Lionel Henry [aut],\n  Posit Software, PBC [cph, fnd] (ROR: <https://ror.org/03wc8by49>)",
-        "Maintainer": "Hadley Wickham <hadley@posit.co>",
-        "Repository": "CRAN",
-        "Date/Publication": "2026-01-09 10:30:02 UTC",
-        "Built": "R 4.5.2; x86_64-w64-mingw32; 2026-01-21 03:36:55 UTC; windows",
-        "Archs": "x64",
-        "RemoteType": "standard",
-        "RemotePkgRef": "purrr",
-        "RemoteRef": "purrr",
-        "RemoteRepos": "https://cran.rstudio.com",
-        "RemoteSha": "1.2.1"
-      }
-    },
     "rappdirs": {
       "Source": "CRAN",
       "Repository": "https://cloud.r-project.org",
@@ -2074,36 +1904,6 @@
         "RemoteRef": "rprojroot",
         "RemoteRepos": "https://cran.rstudio.com",
         "RemoteSha": "2.1.1"
-      }
-    },
-    "rstudioapi": {
-      "Source": "CRAN",
-      "Repository": "https://cloud.r-project.org",
-      "description": {
-        "Package": "rstudioapi",
-        "Title": "Safely Access the RStudio API",
-        "Description": "Access the RStudio API (if available) and provide informative error\n    messages when it's not.",
-        "Version": "0.18.0",
-        "Authors@R": "c(\n    person(\"Kevin\", \"Ushey\", role = c(\"aut\", \"cre\"), email = \"kevin@rstudio.com\"),\n    person(\"JJ\", \"Allaire\", role = c(\"aut\"), email = \"jj@posit.co\"),\n    person(\"Hadley\", \"Wickham\", role = c(\"aut\"), email = \"hadley@posit.co\"),\n    person(\"Gary\", \"Ritchie\", role = c(\"aut\"), email = \"gary@posit.co\"),\n    person(family = \"RStudio\", role = \"cph\")\n    )",
-        "Maintainer": "Kevin Ushey <kevin@rstudio.com>",
-        "License": "MIT + file LICENSE",
-        "URL": "https://rstudio.github.io/rstudioapi/,\nhttps://github.com/rstudio/rstudioapi",
-        "BugReports": "https://github.com/rstudio/rstudioapi/issues",
-        "RoxygenNote": "7.3.3",
-        "Suggests": "testthat, knitr, rmarkdown, clipr, covr, curl, jsonlite,\nwithr",
-        "VignetteBuilder": "knitr",
-        "Encoding": "UTF-8",
-        "NeedsCompilation": "no",
-        "Packaged": "2026-01-15 18:05:24 UTC; kevin",
-        "Author": "Kevin Ushey [aut, cre],\n  JJ Allaire [aut],\n  Hadley Wickham [aut],\n  Gary Ritchie [aut],\n  RStudio [cph]",
-        "Repository": "CRAN",
-        "Date/Publication": "2026-01-16 09:10:02 UTC",
-        "Built": "R 4.5.2; ; 2026-03-06 11:03:47 UTC; windows",
-        "RemoteType": "standard",
-        "RemotePkgRef": "rstudioapi",
-        "RemoteRef": "rstudioapi",
-        "RemoteRepos": "https://cran.rstudio.com",
-        "RemoteSha": "0.18.0"
       }
     },
     "sass": {
@@ -2441,34 +2241,6 @@
         "RemoteSha": "0.6.5"
       }
     },
-    "waldo": {
-      "Source": "CRAN",
-      "Repository": "https://cloud.r-project.org",
-      "description": {
-        "Package": "waldo",
-        "Title": "Find Differences Between R Objects",
-        "Version": "0.6.2",
-        "Authors@R": "c(\n    person(\"Hadley\", \"Wickham\", , \"hadley@posit.co\", role = c(\"aut\", \"cre\")),\n    person(\"Posit Software, PBC\", role = c(\"cph\", \"fnd\"))\n  )",
-        "Description": "Compare complex R objects and reveal the key differences.\n    Designed particularly for use in testing packages where being able to\n    quickly isolate key differences makes understanding test failures much\n    easier.",
-        "License": "MIT + file LICENSE",
-        "URL": "https://waldo.r-lib.org, https://github.com/r-lib/waldo",
-        "BugReports": "https://github.com/r-lib/waldo/issues",
-        "Depends": "R (>= 4.0)",
-        "Imports": "cli, diffobj (>= 0.3.4), glue, methods, rlang (>= 1.1.0)",
-        "Suggests": "bit64, R6, S7, testthat (>= 3.0.0), withr, xml2",
-        "Config/Needs/website": "tidyverse/tidytemplate",
-        "Config/testthat/edition": "3",
-        "Encoding": "UTF-8",
-        "RoxygenNote": "7.3.2",
-        "NeedsCompilation": "no",
-        "Packaged": "2025-07-11 13:27:03 UTC; hadleywickham",
-        "Author": "Hadley Wickham [aut, cre],\n  Posit Software, PBC [cph, fnd]",
-        "Maintainer": "Hadley Wickham <hadley@posit.co>",
-        "Repository": "CRAN",
-        "Date/Publication": "2025-07-11 15:20:02 UTC",
-        "Built": "R 4.5.3; ; 2026-09-09 02:33:43 UTC; windows"
-      }
-    },
     "withr": {
       "Source": "CRAN",
       "Repository": "https://cloud.r-project.org",
@@ -2605,13 +2377,13 @@
   },
   "files": {
     "module_2.Rmd": {
-      "checksum": "d8202035ed5159a7a72b02f73452af21"
+      "checksum": "ac309aa862697aa534b594a739850cb8"
     },
     "R/db_utils.R": {
       "checksum": "bd7418ac20813e1b07b013d5c4a32287"
     },
     "R/tutor_utils.R": {
-      "checksum": "69aa97e4ffa26821e1288096dcd0855f"
+      "checksum": "9b4cd7fa0271e378c3f89201231f124c"
     }
   },
   "users": null

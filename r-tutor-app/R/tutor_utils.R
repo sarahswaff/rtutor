@@ -255,6 +255,72 @@ quiz_question_server <- function(input, output, session, input_id, feedback) {
   })
 }
 
+#' Plain-Shiny replacement for a learnr `exercise=TRUE` chunk plus its
+#' gradethis `*-check`/`*-error-check` chunks -- same rationale as
+#' quiz_question_ui()/quiz_question_server() above. A plain
+#' `textAreaInput()` stands in for learnr's ace.js code editor (a
+#' deliberate simplification, not a general-purpose editor replacement).
+#'
+#' Call exercise_ui(id, starting_code) from a plain chunk to place the
+#' code box + Submit/Start Over UI, and exercise_server(...) once from a
+#' context="server" chunk to wire it up.
+#'
+#' `evaluate_fn` is always called as `evaluate_fn(user_code, result, envir,
+#' stage)` -- `user_code` the raw text submitted, `result` the value of
+#' the last top-level expression (or NULL if evaluation errored), `envir`
+#' the fresh environment the code ran in (so grading logic can inspect
+#' intermediate variables the student created, not just the final
+#' printed value), `stage` "check" or "error_check". Every module's
+#' existing evaluate_*() function has a different, narrower signature
+#' (some don't need `envir`, some don't need `user_code`) -- pass a small
+#' inline wrapper matching this exact 4-argument shape rather than
+#' changing the existing grading functions themselves, e.g.:
+#' `function(user_code, result, envir, stage) evaluate_foo(result, stage)`.
+#' Must return list(passed = TRUE/FALSE, message = "...") like every
+#' existing evaluate_*() already does.
+exercise_ui <- function(id, starting_code) {
+  n_lines <- length(strsplit(starting_code, "\n")[[1]])
+  htmltools::tagList(
+    shiny::textAreaInput(paste0(id, "_code"), label = "R Code", value = starting_code, rows = max(3, n_lines), width = "100%"),
+    shiny::actionButton(paste0(id, "_submit"), "Submit Answer", class = "btn btn-primary btn-sm"),
+    shiny::actionButton(paste0(id, "_reset"), "Start Over", class = "btn btn-light btn-sm"),
+    shiny::uiOutput(paste0(id, "_feedback"))
+  )
+}
+
+exercise_server <- function(input, output, session, id, exercise_key, accordion_id, starting_code, evaluate_fn) {
+  shiny::observeEvent(input[[paste0(id, "_reset")]], {
+    shiny::updateTextAreaInput(session, paste0(id, "_code"), value = starting_code)
+    output[[paste0(id, "_feedback")]] <- shiny::renderUI(NULL)
+  })
+
+  shiny::observeEvent(input[[paste0(id, "_submit")]], {
+    user_code <- input[[paste0(id, "_code")]]
+    env <- new.env()
+    result <- tryCatch(eval(parse(text = user_code), envir = env), error = function(e) e)
+    is_error <- inherits(result, "error")
+    stage <- if (is_error) "error_check" else "check"
+    eval_result <- evaluate_fn(user_code, if (is_error) NULL else result, env, stage)
+
+    student_id <- session$userData$student_id
+    log_attempt_and_maybe_open_chat(exercise_key, student_id, user_code, eval_result$passed, eval_result$message, accordion_id, session)
+
+    output[[paste0(id, "_feedback")]] <- shiny::renderUI({
+      htmltools::tagList(
+        htmltools::tags$pre(if (is_error) {
+          paste("Error:", conditionMessage(result))
+        } else {
+          paste(utils::capture.output(print(result)), collapse = "\n")
+        }),
+        htmltools::tags$div(
+          class = if (eval_result$passed) "alert alert-success" else "alert alert-danger",
+          eval_result$message
+        )
+      )
+    })
+  })
+}
+
 #' Logs an exercise attempt (tolerating DB errors) and, on a failed
 #' attempt, auto-opens that exercise's tutor chat accordion panel. Called
 #' from each exercise's *-check and *-error-check chunks.

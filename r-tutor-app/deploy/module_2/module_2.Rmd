@@ -10,7 +10,6 @@ runtime: shiny_prerendered
 
 ```{r setup, include=FALSE}
 library(learnr)
-library(gradethis)
 library(shiny)
 library(DBI)
 library(RPostgres)
@@ -22,27 +21,16 @@ library(promises)
 # Shared database helper functions (get_con, get_or_create_student,
 # get_exercise_id, log_attempt, log_chat)
 source("R/db_utils.R")
-# Tutor chat context assembly + start_tutor_chat()
+# Tutor chat context assembly + start_tutor_chat(), plus the shared
+# quiz_question_ui()/quiz_question_server() and exercise_ui()/
+# exercise_server() helpers used below in place of learnr::question()
+# and exercise=TRUE/gradethis -- see their definitions in
+# R/tutor_utils.R for why.
 source("R/tutor_utils.R")
 
-gradethis::gradethis_setup()
-
-# One-time warm-up of learnr's exercise renderer -- see
-# warm_up_exercise_renderer() in R/tutor_utils.R for why this exists.
-# Runs during this setup chunk (once per app process/render), not per
-# student session.
-warm_up_exercise_renderer()
-
-# Grading logic shared between each exercise's *-check and *-error-check
-# chunks. These are plain functions (not grade_this() objects -- a
-# grade_this() result can't safely be reused across multiple check
-# chunks, since gradethis rewires its enclosing environment per call
-# site) defined here in setup so both check chunks can see them; each
-# *-check/*-error-check chunk is just a thin grade_this() wrapper around
-# one of these. Without an explicit *-error-check chunk, a submission
-# that errors (e.g. a student accidentally breaks the syntax) would
-# silently fall through to gradethis's generic default error handler,
-# skipping our DB logging and tutor auto-open entirely.
+# Grading logic for each exercise. Unchanged from the gradethis-based
+# version -- only how it's *called* changed (see exercise_server() calls
+# below), not the grading logic itself.
 #
 # log_attempt_and_maybe_open_chat() and wire_tutor_chat() themselves are
 # shared across modules -- see R/tutor_utils.R.
@@ -130,10 +118,63 @@ wire_tutor_chat("module2_fix_error", "tutor_chat_2", "tutor_accordion_2", "Ask t
 ```
 
 ```{r, context="server"}
-# --- Fix for quiz/exercise outputs getting stuck "recalculating" forever
-# on any topic beyond the first -- see unstick_hidden_outputs() in
-# R/tutor_utils.R for the full root-cause explanation.
+# --- Fix for quiz/exercise feedback outputs getting stuck "recalculating"
+# if bound while their topic is hidden -- see unstick_hidden_outputs() in
+# R/tutor_utils.R. Kept as a safety net even though the quiz/exercise
+# controls themselves are now plain static Shiny inputs (see below):
+# the *feedback* messages are still ordinary renderUI() outputs, which
+# are still subject to this specific suspend-while-hidden mechanism.
 unstick_hidden_outputs(output, session)
+```
+
+```{r, context="server"}
+# --- Quiz question wiring ------------------------------------------------
+# See quiz_question_ui()/quiz_question_server() in R/tutor_utils.R for why
+# these replace learnr::question() (a client-side interaction-binding bug
+# in learnr's own dynamic quiz UI, confirmed via a wire-level trace against
+# a real deployed server -- see debug_recalculating_bug/HANDOFF.md).
+
+quiz_question_server(input, output, session, "packages_quiz", list(
+  wrong_install = list(correct = FALSE, message = "That downloads it again -- not needed since it's already installed."),
+  correct = list(correct = TRUE, message = "Correct!"),
+  wrong_automatic = list(correct = FALSE, message = "Not quite -- installed packages still need to be loaded with library() each session.")
+))
+
+quiz_question_server(input, output, session, "console_quiz", list(
+  wrong_speed = list(correct = FALSE, message = "Not about speed -- the code executes the same either way."),
+  correct = list(correct = TRUE, message = "Correct!"),
+  wrong_oneline = list(correct = FALSE, message = "The Console can run many lines over a session -- it's just not saved as a file automatically.")
+))
+
+quiz_question_server(input, output, session, "running_quiz", list(
+  wrong_oneatatime = list(correct = FALSE, message = "That works, but it's not the most efficient option here."),
+  correct = list(correct = TRUE, message = "Correct!"),
+  wrong_retype = list(correct = FALSE, message = "Retyping isn't necessary -- you can run the file directly.")
+))
+
+quiz_question_server(input, output, session, "help_quiz", list(
+  correct = list(correct = TRUE, message = "Correct!"),
+  wrong_guess = list(correct = FALSE, message = "That works eventually, but it's not the fastest or most reliable way."),
+  wrong_reinstall = list(correct = FALSE, message = "Not related to checking a function's arguments.")
+))
+```
+
+```{r, context="server"}
+# --- Exercise wiring -------------------------------------------------------
+# See exercise_ui()/exercise_server() in R/tutor_utils.R for why these
+# replace learnr's exercise=TRUE + gradethis check chunks.
+
+exercise_server(
+  input, output, session, "comment_exercise", "module2_comment_out", "tutor_accordion_1",
+  starting_code = 'print("Keep this line")\nprint("Comment this line out")',
+  evaluate_fn = function(user_code, result, envir, stage) evaluate_comment_exercise(user_code, stage)
+)
+
+exercise_server(
+  input, output, session, "fix_the_bug_exercise", "module2_fix_error", "tutor_accordion_2",
+  starting_code = "print(Hello)",
+  evaluate_fn = function(user_code, result, envir, stage) evaluate_fix_the_bug_exercise(result, stage)
+)
 ```
 
 ## Welcome back
@@ -155,13 +196,12 @@ R on its own can do a lot, but most real work relies on **packages** -- bundles 
 
 A common beginner mix-up: running `install.packages()` again every session (unnecessary -- it's already installed) instead of `library()` (which you do need every session).
 
-```{r packages-quiz, echo=FALSE}
-question("You already installed the tidyverse package last week. You're starting a new R session today and want to use it. What do you run?",
-  answer("install.packages(\"tidyverse\")", message = "That downloads it again -- not needed since it's already installed."),
-  answer("library(tidyverse)", correct = TRUE),
-  answer("Nothing -- it's automatically available.", message = "Not quite -- installed packages still need to be loaded with library() each session."),
-  allow_retry = TRUE
-)
+```{r, echo=FALSE}
+quiz_question_ui("packages_quiz", "You already installed the tidyverse package last week. You're starting a new R session today and want to use it. What do you run?", c(
+  "install.packages(\"tidyverse\")" = "wrong_install",
+  "library(tidyverse)" = "correct",
+  "Nothing -- it's automatically available." = "wrong_automatic"
+))
 ```
 
 ## The Console
@@ -172,13 +212,12 @@ Type a line of code into the Console and press Enter, and R runs it immediately 
 
 That's what **scripts** are for -- files (usually ending in `.R`) where you write code that you can save, edit, and re-run later, rather than retyping it in the Console every time.
 
-```{r console-quiz, echo=FALSE}
-question("What's the main advantage of writing your code in a script instead of typing it directly into the Console?",
-  answer("Scripts run faster than the Console.", message = "Not about speed -- the code executes the same either way."),
-  answer("You can save, edit, and re-run a script later; Console history is easy to lose track of.", correct = TRUE),
-  answer("The Console can only run one line of code, ever.", message = "The Console can run many lines over a session -- it's just not saved as a file automatically."),
-  allow_retry = TRUE
-)
+```{r, echo=FALSE}
+quiz_question_ui("console_quiz", "What's the main advantage of writing your code in a script instead of typing it directly into the Console?", c(
+  "Scripts run faster than the Console." = "wrong_speed",
+  "You can save, edit, and re-run a script later; Console history is easy to lose track of." = "correct",
+  "The Console can only run one line of code, ever." = "wrong_oneline"
+))
 ```
 
 ## Comments
@@ -194,29 +233,8 @@ Comments are useful for two main things:
 
 Below are two lines of code. Leave the first one exactly as it is, but use `#` to comment out the second one, so that only `"Keep this line"` gets printed when you submit. Don't delete the second line -- just comment it out.
 
-```{r comment-exercise, exercise=TRUE}
-print("Keep this line")
-print("Comment this line out")
-```
-
-```{r comment-exercise-check}
-grade_this({
-  session <- shiny::getDefaultReactiveDomain()
-  student_id <- if (!is.null(session)) session$userData$student_id else NA
-  result <- evaluate_comment_exercise(.user_code, .stage)
-  log_attempt_and_maybe_open_chat("module2_comment_out", student_id, .user_code, result$passed, result$message, "tutor_accordion_1", session)
-  if (result$passed) pass(result$message) else fail(result$message)
-})
-```
-
-```{r comment-exercise-error-check}
-grade_this({
-  session <- shiny::getDefaultReactiveDomain()
-  student_id <- if (!is.null(session)) session$userData$student_id else NA
-  result <- evaluate_comment_exercise(.user_code, .stage)
-  log_attempt_and_maybe_open_chat("module2_comment_out", student_id, .user_code, result$passed, result$message, "tutor_accordion_1", session)
-  if (result$passed) pass(result$message) else fail(result$message)
-})
+```{r, echo=FALSE}
+exercise_ui("comment_exercise", 'print("Keep this line")\nprint("Comment this line out")')
 ```
 
 Stuck, or want to double check your thinking? The tutor chat below is available any time -- before you submit, after a failed attempt, or even after you've already passed.
@@ -250,13 +268,12 @@ In RStudio, the most common ways to run code are:
 - **Run the current line** -- click into the line in your script and press **Ctrl+Enter** (Cmd+Return on Mac). This runs just that line in the Console and moves your cursor to the next one.
 - **Run the whole script** -- click **Source** (or press Ctrl+Shift+Enter) to run every line in the file from top to bottom.
 
-```{r running-quiz, echo=FALSE}
-question("You've been given a 10-line script and just want to see what the whole thing does. What's the most efficient way to run it?",
-  answer("Click into each line one at a time and press Ctrl+Enter, ten separate times.", message = "That works, but it's not the most efficient option here."),
-  answer("Click Source to run the entire script at once.", correct = TRUE),
-  answer("Retype all 10 lines into the Console by hand.", message = "Retyping isn't necessary -- you can run the file directly."),
-  allow_retry = TRUE
-)
+```{r, echo=FALSE}
+quiz_question_ui("running_quiz", "You've been given a 10-line script and just want to see what the whole thing does. What's the most efficient way to run it?", c(
+  "Click into each line one at a time and press Ctrl+Enter, ten separate times." = "wrong_oneatatime",
+  "Click Source to run the entire script at once." = "correct",
+  "Retype all 10 lines into the Console by hand." = "wrong_retype"
+))
 ```
 
 ## Reading error messages
@@ -275,28 +292,8 @@ One especially common mistake for beginners: writing a word without quotation ma
 
 The code below has exactly this problem. Fix it so that it runs without an error and prints the word `Hello`.
 
-```{r fix-the-bug-exercise, exercise=TRUE}
-print(Hello)
-```
-
-```{r fix-the-bug-exercise-check}
-grade_this({
-  session <- shiny::getDefaultReactiveDomain()
-  student_id <- if (!is.null(session)) session$userData$student_id else NA
-  result <- evaluate_fix_the_bug_exercise(.result, .stage)
-  log_attempt_and_maybe_open_chat("module2_fix_error", student_id, .user_code, result$passed, result$message, "tutor_accordion_2", session)
-  if (result$passed) pass(result$message) else fail(result$message)
-})
-```
-
-```{r fix-the-bug-exercise-error-check}
-grade_this({
-  session <- shiny::getDefaultReactiveDomain()
-  student_id <- if (!is.null(session)) session$userData$student_id else NA
-  result <- evaluate_fix_the_bug_exercise(.result, .stage)
-  log_attempt_and_maybe_open_chat("module2_fix_error", student_id, .user_code, result$passed, result$message, "tutor_accordion_2", session)
-  if (result$passed) pass(result$message) else fail(result$message)
-})
+```{r, echo=FALSE}
+exercise_ui("fix_the_bug_exercise", "print(Hello)")
 ```
 
 ```{r, echo=FALSE}
@@ -328,13 +325,12 @@ R has built-in documentation for almost everything, and checking it is faster th
 
 Later in this course, you may also have an AI assistant available to ask questions like this to directly -- but `?` is still worth knowing, since it's always there, works offline, and gives you the authoritative answer straight from the package itself.
 
-```{r help-quiz, echo=FALSE}
-question("You want to know what arguments the mean() function accepts. What's the fastest way to check, from inside R?",
-  answer("?mean", correct = TRUE),
-  answer("Guess and see what error you get.", message = "That works eventually, but it's not the fastest or most reliable way."),
-  answer("Reinstall R.", message = "Not related to checking a function's arguments."),
-  allow_retry = TRUE
-)
+```{r, echo=FALSE}
+quiz_question_ui("help_quiz", "You want to know what arguments the mean() function accepts. What's the fastest way to check, from inside R?", c(
+  "?mean" = "correct",
+  "Guess and see what error you get." = "wrong_guess",
+  "Reinstall R." = "wrong_reinstall"
+))
 ```
 
 ## Wrapping up

@@ -214,6 +214,113 @@ bs5_theme_dependencies <- function() {
   htmltools::tagList(bslib::bs_theme_dependencies(bslib::bs_theme(version = 5, bootswatch = "cerulean")))
 }
 
+#' Plain-Shiny replacement for learnr::question(). See
+#' debug_recalculating_bug/HANDOFF.md for why: learnr's own quiz/exercise
+#' UI is dynamically injected via renderUI() after session start, and
+#' relies on a client-side re-binding step (Shiny's `progress`/`binding`
+#' protocol message) to become interactive -- confirmed, via a wire-level
+#' trace, to reliably fail in real user browsers (Chrome and Edge, both
+#' localhost and a real Connect Cloud deployment) despite the server
+#' completing its side of the exchange correctly every time. Ordinary,
+#' statically-declared Shiny inputs (radioButtons(), actionButton()) never
+#' need that re-binding step -- they're bound once, normally, when the
+#' page first loads -- and have been reliable throughout this entire
+#' investigation (e.g. the identity modal's textInput/actionButton never
+#' once failed). This pair of functions reproduces question()'s visible
+#' behavior (single-choice, immediate feedback, retry allowed) using only
+#' that reliable path.
+#'
+#' `choices` is a named character vector: names are the answer text shown
+#' to the student, values are short internal IDs. `feedback` is a named
+#' list keyed by those same IDs, each an unnamed list(correct = TRUE/FALSE,
+#' message = "..."). Call quiz_question_ui() from a plain (non-server)
+#' chunk to place the UI, and quiz_question_server() once from a
+#' context="server" chunk to wire it up -- same `input_id` in both.
+quiz_question_ui <- function(input_id, label, choices) {
+  htmltools::tagList(
+    shiny::radioButtons(input_id, label = label, choices = choices, selected = character(0)),
+    shiny::actionButton(paste0(input_id, "_submit"), "Submit Answer", class = "btn btn-primary btn-sm"),
+    shiny::uiOutput(paste0(input_id, "_feedback"))
+  )
+}
+
+quiz_question_server <- function(input, output, session, input_id, feedback) {
+  shiny::observeEvent(input[[paste0(input_id, "_submit")]], {
+    shiny::req(input[[input_id]])
+    info <- feedback[[input[[input_id]]]]
+    output[[paste0(input_id, "_feedback")]] <- shiny::renderUI({
+      cls <- if (isTRUE(info$correct)) "alert alert-success" else "alert alert-danger"
+      htmltools::tags$div(class = cls, info$message)
+    })
+  })
+}
+
+#' Plain-Shiny replacement for a learnr `exercise=TRUE` chunk plus its
+#' gradethis `*-check`/`*-error-check` chunks -- same rationale as
+#' quiz_question_ui()/quiz_question_server() above. A plain
+#' `textAreaInput()` stands in for learnr's ace.js code editor (a
+#' deliberate simplification, not a general-purpose editor replacement).
+#'
+#' Call exercise_ui(id, starting_code) from a plain chunk to place the
+#' code box + Submit/Start Over UI, and exercise_server(...) once from a
+#' context="server" chunk to wire it up.
+#'
+#' `evaluate_fn` is always called as `evaluate_fn(user_code, result, envir,
+#' stage)` -- `user_code` the raw text submitted, `result` the value of
+#' the last top-level expression (or NULL if evaluation errored), `envir`
+#' the fresh environment the code ran in (so grading logic can inspect
+#' intermediate variables the student created, not just the final
+#' printed value), `stage` "check" or "error_check". Every module's
+#' existing evaluate_*() function has a different, narrower signature
+#' (some don't need `envir`, some don't need `user_code`) -- pass a small
+#' inline wrapper matching this exact 4-argument shape rather than
+#' changing the existing grading functions themselves, e.g.:
+#' `function(user_code, result, envir, stage) evaluate_foo(result, stage)`.
+#' Must return list(passed = TRUE/FALSE, message = "...") like every
+#' existing evaluate_*() already does.
+exercise_ui <- function(id, starting_code) {
+  n_lines <- length(strsplit(starting_code, "\n")[[1]])
+  htmltools::tagList(
+    shiny::textAreaInput(paste0(id, "_code"), label = "R Code", value = starting_code, rows = max(3, n_lines), width = "100%"),
+    shiny::actionButton(paste0(id, "_submit"), "Submit Answer", class = "btn btn-primary btn-sm"),
+    shiny::actionButton(paste0(id, "_reset"), "Start Over", class = "btn btn-light btn-sm"),
+    shiny::uiOutput(paste0(id, "_feedback"))
+  )
+}
+
+exercise_server <- function(input, output, session, id, exercise_key, accordion_id, starting_code, evaluate_fn) {
+  shiny::observeEvent(input[[paste0(id, "_reset")]], {
+    shiny::updateTextAreaInput(session, paste0(id, "_code"), value = starting_code)
+    output[[paste0(id, "_feedback")]] <- shiny::renderUI(NULL)
+  })
+
+  shiny::observeEvent(input[[paste0(id, "_submit")]], {
+    user_code <- input[[paste0(id, "_code")]]
+    env <- new.env()
+    result <- tryCatch(eval(parse(text = user_code), envir = env), error = function(e) e)
+    is_error <- inherits(result, "error")
+    stage <- if (is_error) "error_check" else "check"
+    eval_result <- evaluate_fn(user_code, if (is_error) NULL else result, env, stage)
+
+    student_id <- session$userData$student_id
+    log_attempt_and_maybe_open_chat(exercise_key, student_id, user_code, eval_result$passed, eval_result$message, accordion_id, session)
+
+    output[[paste0(id, "_feedback")]] <- shiny::renderUI({
+      htmltools::tagList(
+        htmltools::tags$pre(if (is_error) {
+          paste("Error:", conditionMessage(result))
+        } else {
+          paste(utils::capture.output(print(result)), collapse = "\n")
+        }),
+        htmltools::tags$div(
+          class = if (eval_result$passed) "alert alert-success" else "alert alert-danger",
+          eval_result$message
+        )
+      )
+    })
+  })
+}
+
 #' Logs an exercise attempt (tolerating DB errors) and, on a failed
 #' attempt, auto-opens that exercise's tutor chat accordion panel. Called
 #' from each exercise's *-check and *-error-check chunks.
