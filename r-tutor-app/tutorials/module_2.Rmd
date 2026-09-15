@@ -27,6 +27,12 @@ source("../R/tutor_utils.R")
 
 gradethis::gradethis_setup()
 
+# One-time warm-up of learnr's exercise renderer -- see
+# warm_up_exercise_renderer() in R/tutor_utils.R for why this exists.
+# Runs during this setup chunk (once per app process/render), not per
+# student session.
+warm_up_exercise_renderer()
+
 # Grading logic shared between each exercise's *-check and *-error-check
 # chunks. These are plain functions (not grade_this() objects -- a
 # grade_this() result can't safely be reused across multiple check
@@ -112,6 +118,13 @@ observeEvent(input$submit_name, {
 
 wire_tutor_chat("module2_comment_out", "tutor_chat_1", "tutor_accordion_1", "Ask the Tutor", input, output, session)
 wire_tutor_chat("module2_fix_error", "tutor_chat_2", "tutor_accordion_2", "Ask the Tutor", input, output, session)
+```
+
+```{r, context="server"}
+# --- Fix for quiz/exercise outputs getting stuck "recalculating" forever
+# on any topic beyond the first -- see unstick_hidden_outputs() in
+# R/tutor_utils.R for the full root-cause explanation.
+unstick_hidden_outputs(output, session)
 ```
 
 ## Welcome back

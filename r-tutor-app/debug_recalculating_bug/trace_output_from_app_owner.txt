@@ -1,0 +1,68 @@
+Wire-level trace (options(shiny.trace = "send")) captured by the app owner,
+running run_repro_trace.R and opening http://127.0.0.1:7414 in their own
+real browser (the one where the bug happens). See HANDOFF.md for
+interpretation. Captured after navigating through the identity modal to
+the "Installing R and RStudio" topic -- no clicking on the quiz/exercise
+attempted for this capture (that was done separately; see HANDOFF.md for
+the "question shows up, buttons not clickable" report that came after
+this trace).
+
+Listening on http://127.0.0.1:7414
+SEND {"config":{"workerId":"","sessionId":"0829a09494472d316500e87022b448a4","user":null}}
+SEND {"custom":{"tutorial_isServerAvailable":"true"}}
+SEND {"busy":"busy"}
+SEND {"modal":{"type":"show","message":{"html":"<div class=\"modal fade\" data-backdrop=\"static\" data-bs-backdrop=\"static\" data-bs-keyboard=\"false\" data-keyboard=\"false\" id=\"shiny-modal\" tabindex=\"-1\">...(identity modal HTML)...","deps":[]}}}
+UNSTICK STARTED | pid=15488 | shiny=1.14.0 | learnr=0.11.6
+PATCHED: install-quiz-answer_container | hidden=TRUE
+PATCHED: install-r-quiz-answer_container | hidden=TRUE
+PATCHED: install-rstudio-quiz-answer_container | hidden=TRUE
+PATCHED: first-check-quiz-answer_container | hidden=TRUE
+PATCHED: panes-quiz-answer_container | hidden=TRUE
+PATCHED: wd-quiz-answer_container | hidden=TRUE
+PATCHED: tutorial-exercise-name-exercise-output | hidden=TRUE
+SEND {"recalculating":{"name":"install-quiz-answer_container","status":"recalculating"}}
+SEND {"recalculating":{"name":"install-quiz-answer_container","status":"recalculated"}}
+SEND {"recalculating":{"name":"install-r-quiz-answer_container","status":"recalculating"}}
+SEND {"recalculating":{"name":"install-r-quiz-answer_container","status":"recalculated"}}
+SEND {"recalculating":{"name":"install-rstudio-quiz-answer_container","status":"recalculating"}}
+SEND {"recalculating":{"name":"install-rstudio-quiz-answer_container","status":"recalculated"}}
+SEND {"recalculating":{"name":"first-check-quiz-answer_container","status":"recalculating"}}
+SEND {"recalculating":{"name":"first-check-quiz-answer_container","status":"recalculated"}}
+SEND {"recalculating":{"name":"panes-quiz-answer_container","status":"recalculating"}}
+SEND {"recalculating":{"name":"panes-quiz-answer_container","status":"recalculated"}}
+SEND {"recalculating":{"name":"wd-quiz-answer_container","status":"recalculating"}}
+SEND {"recalculating":{"name":"wd-quiz-answer_container","status":"recalculated"}}
+SEND {"recalculating":{"name":"tutorial-exercise-name-exercise-output","status":"recalculating"}}
+SEND {"recalculating":{"name":"tutorial-exercise-name-exercise-output","status":"recalculated"}}
+SEND {"busy":"idle"}
+SEND {"errors":{"tutorial-exercise-name-exercise-output":{"message":"","call":"NULL","type":["shiny.silent.error","validation"]}},"values":{...loading-placeholder HTML for wd-quiz-answer_container, panes-quiz-answer_container, first-check-quiz-answer_container, (truncated in original paste, likely continued with install-rstudio-quiz-answer_container, install-r-quiz-answer_container, install-quiz-answer_container)...}}
+SEND {"busy":"busy"} / {"busy":"idle"} pairs (x4)
+SEND {"progress":{"type":"binding","message":{"id":"install-quiz-answer_container","persistent":false}}}
+SEND {"progress":{"type":"binding","message":{"id":"install-r-quiz-answer_container","persistent":false}}}
+SEND {"progress":{"type":"binding","message":{"id":"install-rstudio-quiz-answer_container","persistent":false}}}
+SEND {"progress":{"type":"binding","message":{"id":"first-check-quiz-answer_container","persistent":false}}}
+SEND {"progress":{"type":"binding","message":{"id":"panes-quiz-answer_container","persistent":false}}}
+SEND {"progress":{"type":"binding","message":{"id":"wd-quiz-answer_container","persistent":false}}}
+SEND {"recalculating":...} pairs again for all 6 *-answer_container ids (second pass)
+SEND {"busy":"idle"}
+SEND {"errors":{},"values":{"wd-quiz-answer_container":{"html":"<div id=\"wd-quiz-answer\" class=\"form-group shiny-input-radiogroup ...\" role=\"radiogroup\" ...>real question HTML with actual <input type=\"radio\"> elements and answer text</div>...","deps":[]},"panes-quiz-answer_container":{... real HTML, same pattern ...} (truncated, likely continued with the other 4 including install-quiz-answer_container)}}
+SEND {"busy":"busy"}
+PATCHED: install-quiz-message_container | hidden=TRUE
+PATCHED: install-quiz-action_button_container | hidden=TRUE
+... (PATCHED for all 6 quizzes' message_container and action_button_container)
+SEND {"recalculating":...} pairs for all message_container/action_button_container ids
+SEND {"busy":"idle"}
+SEND {"errors":{...all 6 message_container ids: shiny.silent.error/validation, empty message...},"values":{...all 6 action_button_container ids: real <button> HTML, e.g. install-quiz-action_button, class="btn btn-default action-button btn-primary disabled" disabled ...}}
+SEND {"progress":{"type":"binding",...}} for each action_button_container id
+SEND {"recalculating":...} pairs again for action_button_container ids (second pass)
+SEND {"busy":"idle"}
+SEND {"errors":{},"values":{...all 6 action_button_container ids again, same disabled button HTML...}}
+SEND {"busy":"busy"} / {"busy":"idle"} pairs repeating steadily
+SEND {"modal":{"type":"remove","message":null}}
+... (busy/idle pairs continue indefinitely -- this is unstick_hidden_outputs()'s own 200ms poll, harmless)
+
+[App owner then separately reported, after this trace was captured:
+"the question shows up. the buttons are visible. the buttons are not
+clickable." -- i.e. the quiz question text and radio button HTML DID
+render on screen in their browser, matching what this trace shows being
+sent, but clicking does nothing.]

@@ -1,0 +1,313 @@
+---
+title: "Module 1: Introduction to R and RStudio"
+output:
+  learnr::tutorial:
+    progressive: true
+    allow_skip: false
+    theme: !expr bslib::bs_theme(version = 5, bootswatch = "cerulean")
+runtime: shiny_prerendered
+---
+
+```{r setup, include=FALSE}
+library(learnr)
+library(gradethis)
+library(shiny)
+library(bslib)
+library(shinychat)
+
+gradethis::gradethis_setup()
+
+# --- STUBBED replacements for our real R/db_utils.R + R/tutor_utils.R -----
+# Real project uses a Postgres DB (identity capture, attempt logging, chat
+# logging) and an ellmer Anthropic chat client. None of that is needed to
+# reproduce the bug, so every DB/LLM call below is a no-op/instant stub.
+# Everything else (BS5 injection, accordion/chat_ui wiring shape, the
+# progressive-gated exercise, multiple quiz questions across multiple
+# topics) is unchanged from the real file.
+
+TUTOR_CHAT_GREETING <- "Hi! I'm here if you want to talk through this exercise."
+
+bs5_theme_dependencies <- function() {
+  htmltools::tagList(bslib::bs_theme_dependencies(bslib::bs_theme(version = 5, bootswatch = "cerulean")))
+}
+
+get_con <- function() "stub-connection"
+get_or_create_student <- function(con, display_name) "stub-student-id"
+get_exercise_id <- function(con, exercise_key) 1L
+log_attempt <- function(con, student_id, exercise_id, submitted_code, passed, gradethis_message) invisible(NULL)
+log_chat <- function(con, student_id, exercise_id, role, message) invisible(NULL)
+dbDisconnect <- function(con) invisible(NULL)
+
+log_attempt_and_maybe_open_chat <- function(exercise_key, student_id, user_code, passed, message, accordion_id, session) {
+  if (!passed) {
+    bslib::accordion_panel_open(id = accordion_id, values = "Ask the Tutor", session = session)
+  }
+}
+
+wire_tutor_chat <- function(exercise_key, chat_id, accordion_id, panel_value, input, output, session) {
+  shiny::observeEvent(input[[accordion_id]], {
+    if (panel_value %in% input[[accordion_id]]) {
+      shinychat::chat_clear(chat_id, session = session)
+      shinychat::chat_set_greeting(chat_id, TUTOR_CHAT_GREETING, session = session)
+    }
+  }, ignoreInit = TRUE, ignoreNULL = FALSE)
+  # Real version also observes chat_id_user_input to stream an ellmer
+  # reply; omitted here since the bug reproduces without ever sending a
+  # chat message.
+}
+
+evaluate_name_exercise <- function(result, stage) {
+  passed <- TRUE
+  feedback_message <- "Nice -- that's exactly right! Your response has been recorded."
+
+  if (is.null(result) || !is.character(result) || nchar(trimws(result)) == 0) {
+    passed <- FALSE
+    feedback_message <- if (identical(stage, "error_check")) {
+      "That code doesn't run as-is -- check that your name is wrapped in matching quotation marks."
+    } else {
+      "Make sure to type your name inside quotation marks."
+    }
+  } else if (identical(trimws(result), "___")) {
+    passed <- FALSE
+    feedback_message <- "Looks like the placeholder is still there -- replace `___` with your own name."
+  }
+
+  list(passed = passed, message = feedback_message)
+}
+
+# --- THE ATTEMPTED FIX, verbatim from R/tutor_utils.R in the real project --
+# See HANDOFF.md for the full writeup. Short version: Shiny's
+# session$clientData$output_<id>_hidden flag was observed to never flip back
+# to FALSE for an output bound while its containing `##` topic was hidden by
+# learnr's progressive topic switching, so shouldSuspend() (which reads that
+# flag) keeps such outputs permanently suspended. This function watches
+# session$clientData's output_*_hidden keys on a timer and calls
+# outputOptions(..., suspendWhenHidden = FALSE) on each newly-seen output
+# exactly once (outputOptions() errors if called before the output exists,
+# and learnr registers many quiz/exercise sub-outputs lazily, well after
+# session start -- hence the polling-and-retry approach instead of a single
+# upfront pass).
+#
+# IMPORTANT / UNRESOLVED: this appeared to fully fix the bug in Claude's own
+# testing (via `Rscript R/run_tutorial.R` + Claude's own browser-automation
+# tool) -- repeated, verified with direct Shiny-internals tracing
+# (session$clientData dumps, shiny:bound/recalculating/recalculated/value
+# event listeners, R6 Observer/ShinySession source inspection) and with real
+# gradethis pass/fail feedback appearing on screen across all three modules.
+# BUT: the user re-tested the exact same code via RStudio's "Run Document",
+# via `Rscript R/run_tutorial.R` + their own real browser (including
+# incognito, with no extensions), and reports NO change in any of those --
+# the exercise/quiz buttons are still completely non-functional, exactly as
+# before this fix. Debug logging below confirms the fix's own mechanism
+# runs and succeeds identically in the app owner's environment too -- see
+# HANDOFF.md's "New finding" section for the current leading hypothesis
+# (an uncaught client-side JS error only seen in the app owner's real
+# browser).
+unstick_hidden_outputs <- function(output, session) {
+  # TEMPORARY DIAGNOSTIC LOGGING -- confirms whether this function is even
+  # running / discovering outputs / succeeding. See HANDOFF.md.
+  message(
+    "UNSTICK STARTED | pid=", Sys.getpid(),
+    " | shiny=", getNamespaceVersion("shiny"),
+    " | learnr=", getNamespaceVersion("learnr")
+  )
+  already_patched <- character(0)
+  shiny::observe({
+    shiny::invalidateLater(200, session)
+    cd_names <- names(shiny::reactiveValuesToList(session$clientData))
+    hidden_keys <- grep("^output_.*_hidden$", cd_names, value = TRUE)
+    ids <- sub("^output_(.*)_hidden$", "\\1", hidden_keys)
+    new_ids <- setdiff(ids, already_patched)
+    for (id in new_ids) {
+      ok <- tryCatch({
+        shiny::outputOptions(output, id, suspendWhenHidden = FALSE)
+        TRUE
+      }, error = function(e) FALSE)
+      if (ok) {
+        message(
+          "PATCHED: ", id,
+          " | hidden=",
+          session$clientData[[paste0("output_", id, "_hidden")]]
+        )
+        already_patched <<- c(already_patched, id)
+      }
+    }
+  })
+}
+```
+
+```{r, context="server"}
+showModal(modalDialog(
+  title = "Welcome!",
+  "Please enter your name to begin this tutorial.",
+  textInput("student_name", label = NULL, placeholder = "Your name"),
+  footer = actionButton("submit_name", "Start Tutorial"),
+  easyClose = FALSE
+))
+
+observeEvent(input$submit_name, {
+  req(input$student_name)
+  con <- get_con()
+  sid <- get_or_create_student(con, trimws(input$student_name))
+  dbDisconnect(con)
+
+  session$userData$student_id <- sid
+  removeModal()
+})
+```
+
+```{r, context="server"}
+wire_tutor_chat("module1_name_check", "tutor_chat_1", "tutor_accordion_1", "Ask the Tutor", input, output, session)
+```
+
+```{r, context="server"}
+unstick_hidden_outputs(output, session)
+```
+
+## Welcome
+
+```{r, echo=FALSE}
+bs5_theme_dependencies()
+```
+
+This tutorial is the first step before we get into any real course material. The goal here isn't to make you a programmer -- it's to make sure you're comfortable with R and RStudio as tools, so that later material (which may come from your instructor or from an AI assistant) doesn't feel unfamiliar.
+
+Nothing in this module involves writing real R code yet -- that starts in Module 2.
+
+## Installing R and RStudio
+
+R and RStudio are two different pieces of software that work together:
+
+- **R** is the actual programming language -- the engine that runs your code.
+- **RStudio** is an *interface* for working with R more comfortably -- it doesn't replace R, it sits on top of it.
+
+You install them in that order: R first (from CRAN), then RStudio (from posit.co), since RStudio needs an existing R installation to attach to.
+
+```{r install-quiz, echo=FALSE}
+question("Which of these is true about the relationship between R and RStudio?",
+  answer("RStudio replaces R -- you only need to install RStudio.", message = "Not quite -- RStudio needs R installed underneath it."),
+  answer("R is the language/engine, and RStudio is an interface built on top of it.", correct = TRUE),
+  answer("R and RStudio are two unrelated tools with no connection.", message = "They're closely related -- RStudio is built specifically to work with R."),
+  allow_retry = TRUE
+)
+```
+
+### Step 1: Install R
+
+1. Go to CRAN.
+2. Download and run the installer.
+
+```{r install-r-quiz, echo=FALSE}
+question("You've just downloaded the R installer file. What should you do with it?",
+  answer("Delete it.", message = "No."),
+  answer("Open/run it and click through the installation wizard.", correct = TRUE),
+  answer("Rename it to \"RStudio\".", message = "No."),
+  allow_retry = TRUE
+)
+```
+
+### Step 2: Install RStudio
+
+1. Go to posit.co.
+2. Download and run the installer.
+
+```{r install-rstudio-quiz, echo=FALSE}
+question("Why install RStudio too?",
+  answer("You don't need to.", message = "No."),
+  answer("It's the interface on top of R.", correct = TRUE),
+  answer("It installs R for you.", message = "No."),
+  allow_retry = TRUE
+)
+```
+
+### Step 3: Open RStudio and do a first check
+
+Type `2 + 2` in the Console.
+
+```{r first-check-quiz, echo=FALSE}
+question("You get an error instead of [1] 4. Most likely explanation?",
+  answer("RStudio is broken.", message = "No."),
+  answer("R wasn't installed correctly.", correct = TRUE),
+  answer("Missing math package.", message = "No."),
+  allow_retry = TRUE
+)
+```
+
+## The RStudio panes
+
+Four panes: Source, Console, Environment/History, Files/Plots/Packages/Help.
+
+```{r panes-quiz, echo=FALSE}
+question("Which pane shows a plot you just created?",
+  answer("Source"),
+  answer("Console"),
+  answer("Environment / History"),
+  answer("Files / Plots / Packages / Help", correct = TRUE),
+  allow_retry = TRUE
+)
+```
+
+## Working directory
+
+Use an RStudio Project.
+
+```{r wd-quiz, echo=FALSE}
+question("Main benefit of an RStudio Project?",
+  answer("Faster code.", message = "No."),
+  answer("Consistent working directory.", correct = TRUE),
+  answer("Required for packages.", message = "No."),
+  allow_retry = TRUE
+)
+```
+
+## Wrapping up
+
+### Quick system check
+
+Replace the placeholder below with your own name, keeping the quotation marks, and click **Submit Answer**.
+
+```{r name-exercise, exercise=TRUE}
+"___"
+```
+
+```{r name-exercise-check}
+grade_this({
+  session <- shiny::getDefaultReactiveDomain()
+  student_id <- if (!is.null(session)) session$userData$student_id else NA
+  result <- evaluate_name_exercise(.result, .stage)
+  log_attempt_and_maybe_open_chat("module1_name_check", student_id, .user_code, result$passed, result$message, "tutor_accordion_1", session)
+  if (result$passed) pass(result$message) else fail(result$message)
+})
+```
+
+```{r name-exercise-error-check}
+grade_this({
+  session <- shiny::getDefaultReactiveDomain()
+  student_id <- if (!is.null(session)) session$userData$student_id else NA
+  result <- evaluate_name_exercise(.result, .stage)
+  log_attempt_and_maybe_open_chat("module1_name_check", student_id, .user_code, result$passed, result$message, "tutor_accordion_1", session)
+  if (result$passed) pass(result$message) else fail(result$message)
+})
+```
+
+Stuck, or want to double check your thinking? The tutor chat below is available any time.
+
+```{r, echo=FALSE}
+accordion(
+  id = "tutor_accordion_1",
+  open = FALSE,
+  accordion_panel(
+    title = "Ask the Tutor",
+    chat_ui(
+      "tutor_chat_1",
+      placeholder = "Ask a question about this exercise...",
+      greeting = TUTOR_CHAT_GREETING,
+      allow_attachments = FALSE
+    )
+  )
+)
+```
+
+### Up next
+
+Module 2 introduces actual R code.

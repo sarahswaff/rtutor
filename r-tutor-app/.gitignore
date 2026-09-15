@@ -6,3 +6,6 @@
 tutorials/.Rhistory
 tutorials/*.html
 tutorials/*_files/
+debug_recalculating_bug/*.html
+debug_recalculating_bug/*_files/
+debug_recalculating_bug/*_cache/

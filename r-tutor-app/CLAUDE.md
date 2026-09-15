@@ -314,79 +314,108 @@ gotcha below) -- so it's not purely a UX nicety.
 
 ## Current status / immediate next step
 
-**CRITICAL, UNRESOLVED: exercises (and quiz questions) become permanently unusable after
-navigating to any topic beyond the first one, in every module.** This is the real cause
-behind repeated "the graded question won't let me click anything" reports -- it is a real,
-reproducible app bug, not environment/tooling flakiness, not the earlier `tutorial.storage`
-fix (that fix is legitimate and stays, but it was NOT this bug).
+**STILL UNRESOLVED, despite an earlier note in this file claiming otherwise -- read this
+before trusting anything below.** `unstick_hidden_outputs()` in `R/tutor_utils.R` (still in
+place, called once per module) was verified extensively via automated testing -- and then
+the user re-tested via RStudio's "Run Document" button and in their own regular browser and
+saw **zero change**: buttons still completely non-functional. This was re-confirmed, not a
+fluke. The automated-testing verification below is real (it did happen, the fix does work
+under those specific conditions) but evidently does not reflect the app's actual real-world
+behavior, for a reason that hasn't been identified yet. See
+`debug_recalculating_bug/HANDOFF.md` for the full, current writeup and the open questions --
+that file is now the source of truth for this bug, not this section. The two things most
+worth checking next: (1) has anyone actually run `Rscript R/run_tutorial.R` and then opened
+the result in a real, non-automated browser (as opposed to either RStudio's "Run Document" OR
+an automated testing tool -- that exact combination has never been tried), and (2) is
+`tutorial.storage` actually `"none"` inside the RStudio session that's failing, or could that
+session predate the `.Rprofile` change and still be using stale/default storage. A
+`grading_progress_indicator_css()` CSS-only loading-message fix was also added and then
+**removed** after the user reported it displaying before the exercise could even be
+submitted -- confirming the output frame is stuck in `.recalculating` from page load in their
+environment, i.e. the original bug, not a delay.
 
-Root cause (fully diagnosed, reproduced on a bare-bones tutorial with zero custom project
-code): Shiny >= 1.9.0 marks every output with a `.recalculating` CSS class the instant it's
-bound, clearing it only on that output's first successful render (this is Shiny's own
-documented behavior change, not a defect in isolation). learnr 0.11.6's topic switching
-(required by `progressive: true`, which every module here uses for exercise gating) hides
-inactive topics via jQuery-based show/hide. Outputs -- including plain `question()` quizzes
-with zero custom code -- that are bound while their topic is still hidden never receive that
-first render once the topic later becomes visible, so they (and, for exercises specifically,
-the Run Code/Submit Answer buttons, which are gated on this same completion signal) stay
-stuck "recalculating" forever. Confirmed via a minimal `learnr::tutorial` with two `##`
-topics, `progressive: true`, and nothing else -- reproduces every time on a plain sidebar
-topic switch.
+The rest of this section is kept as a record of what was tried and what Path-A (automated)
+testing showed -- treat it as unverified for the app's real usage until the discrepancy above
+is resolved.
 
-**Fix paths tried:**
-- Downgrading `shiny` below 1.9.0 (where this regression starts) -- WORKS for the bug itself,
-  but `shinychat` (tutor chat) hard-requires `shiny >= 1.10.0` and refuses to load below it
-  (`loadNamespace()` errors outright, confirmed empirically, not just a DESCRIPTION-file
-  assumption). Since 1.9.0-1.10.0 is a single continuous regression window with no gap,
-  **no shiny version satisfies both constraints at once.** Reverted; shiny is back on 1.14.0
-  as of this note (chat works, this bug does not).
-- A client-side JS workaround (on `hashchange`, force-strip the stuck `recalculating`/
-  `disabled` classes) makes Run Code/Submit Answer *clickable* again, but does NOT fix the
-  underlying broken output binding -- a real Submit click after this "fix" still never
-  receives its result (tested: 11+ seconds, nothing). This is arguably a worse student
-  experience than the original (looks like it's processing forever instead of visibly
-  inert), so this workaround was NOT applied to any real module and should not be, as-is.
-- Investigated [rstudio/shiny#4406](https://github.com/rstudio/shiny/issues/4406) (user-found)
-  -- a real, still-open Shiny 1.14.0 regression where `resolveObservableTarget()` (used by the
-  new `IntersectionObserver`-based visibility detection from PR #4388) stops early at a
-  boxless ancestor and never finds a real box to observe, so the output's visibility is never
-  detected and it stays stuck exactly like this. Documented workaround there is giving the
-  output element an intrinsic size (e.g. `min-width`/`min-height`). Investigated in this
-  project specifically:
-  - No `display: contents` ancestor exists in our actual DOM chain (checked every ancestor
-    from the stuck output frame up to `<body>`), so it isn't literally the same trigger as
-    that issue's popover/tooltip repro -- but the *symptom* (zero-area box breaking
-    IntersectionObserver) could still apply via a different boxless-ancestor path.
-  - Along the way, discovered the Claude Browser pane tool used for all this session's testing
-    was itself reporting `window.innerWidth === 0` by default (a tooling default-viewport
-    bug, confirmed fixable with an explicit `resize_window` call) -- meaning a chunk of this
-    session's earlier "0px width" ancestor-chain evidence was a **testing-tool artifact**, not
-    real. With a real viewport (1280x800) forced, ancestor widths resolve correctly, but the
-    stuck output frame's own **height** is still 0 -- and the bug still reproduces identically
-    with a real viewport, so the viewport issue was a red herring for the underlying bug
-    itself (though it's worth remembering as a real testing-tool gotcha independent of this).
-  - Added `min-height: 2px` (and separately `min-width: 1px`) to the stuck output frame/
-    `.shiny-html-output` elements, present from page load (not injected after the fact) --
-    did NOT fix it. So the simple intrinsic-size workaround from #4406 does not resolve
-    *this* project's manifestation, even though the underlying Shiny-side mechanism looks
-    closely related. The exact boxless ancestor breaking our specific observer chain has not
-    been identified.
-- Not yet tried: forcing genuine DOM removal + reinsertion of the affected output element
-  (rather than just unbind/rebind, class-stripping, or a CSS min-size) after a topic becomes
-  visible, which might trigger `ResizeObserver`/`IntersectionObserver` correctly on a truly
-  fresh insertion. Untested due to time; worth trying next.
-- Not yet tried: pinning an older `shinychat` release (if one exists that doesn't require
-  `shiny >= 1.10.0`) instead of pinning shiny down -- would need to check shinychat's own
-  release history for a version with a lower minimum, and confirm it still has the specific
-  API (`chat_set_greeting()` etc.) this project's tutor chat wiring depends on.
-- Not yet tried: filing/searching for this exact repro (two `##` topics, `progressive: true`,
-  a plain `question()` quiz, zero other custom code) directly against rstudio/learnr's issue
-  tracker -- given how minimal the repro is, this may already be a known learnr+modern-Shiny
-  incompatibility with its own tracked issue and guidance.
+**Root cause:** Shiny's `session$clientData$output_<id>_hidden` flag, which tracks whether a
+given output is currently visible, never flips back to `FALSE` for an output that was bound
+while its containing `##` topic was still hidden by learnr's `progressive: true` topic
+switching (learnr hides inactive topics via jQuery show/hide, and whatever visibility
+re-detection Shiny normally relies on -- e.g. `IntersectionObserver` -- never fires for that
+transition in this combination). Confirmed directly: a `session$clientData` dump observer
+showed the hidden flag stuck at `TRUE` for a quiz's outputs even while that quiz's topic was
+the actively-displayed one on screen, and a `shiny:bound`/`shiny:recalculating`/
+`shiny:recalculated`/`shiny:value` lifecycle listener showed the output gets `shiny:bound`
+once and nothing else, ever. Since Shiny's `shouldSuspend()` reads that stale `hidden=TRUE`
+forever, it permanently blocks the output's first real render -- this is what
+`outputOptions(..., suspendWhenHidden = FALSE)` (a real, documented Shiny option -- see the
+"Explicit vs. implicit output registration" note below for the correction of an earlier wrong
+claim that this option didn't work) is designed to override.
 
-**Next action, before anything else in this file:** resolve this. Until it's fixed, no
-module is actually usable by a real student past their first topic, regardless of any other
-status below.
+**Why a simple fix didn't work directly:** `outputOptions()` requires the target output to
+already be registered, but learnr registers most quiz/exercise sub-outputs (a question's
+`message_container`/`action_button_container`, an exercise's own output frame) *lazily*,
+well after session start -- calling `outputOptions()` on them too early throws `"<id> is not
+in list of output objects"` and crashes the whole session (confirmed empirically). The fix:
+`unstick_hidden_outputs(output, session)` watches `session$clientData`'s `output_*_hidden`
+keys (which reliably appear the instant each dynamic output binds, regardless of whether it's
+hidden) on a 200ms timer, and calls `outputOptions(..., suspendWhenHidden = FALSE)` on each
+newly-seen output exactly once. This is fully generic -- no per-module/per-exercise label
+list to maintain -- and patches every quiz and exercise output in the session, not just one.
+
+**False leads ruled out along the way** (kept here so this isn't re-investigated):
+- Not a `tutorial.storage` issue. `tutorial.storage = "none"` (set to fix the *separate*,
+  real local-filesystem-collision bug -- see the gotcha further below) was suspected at one
+  point since removing it appeared to fix the bug in one test run -- but a clean, controlled
+  retest (single server process, storage explicitly set to `"auto"`/`"client"`/a custom
+  per-PID `filesystem_storage()`) reproduced the exact same stuck-recalculating symptom
+  regardless of storage backend. That one successful-looking run was a red herring (likely a
+  timing/race artifact from several concurrent R processes competing for CPU at the time, not
+  a real fix). `tutorial.storage = "none"` stays in place -- it's still the correct fix for
+  the collision bug -- and `unstick_hidden_outputs()` was confirmed working under it.
+- Not the Shiny `.recalculating`-class-on-bind behavior change alone, not
+  [rstudio/shiny#4406](https://github.com/rstudio/shiny/issues/4406)'s boxless-ancestor
+  `IntersectionObserver` bug (no `display:contents` ancestor exists in this app's real DOM
+  chain, and the documented `min-width`/`min-height` workaround didn't fix it here), and not
+  [[rstudio/shiny#4373]] resume-after-hidden territory -- all plausible given the observed
+  symptoms, but none of the targeted fixes for those specific issues resolved it. The eventual
+  fix works at a different layer (forcing `suspendWhenHidden = FALSE`) rather than fixing
+  whatever specifically breaks the hidden-flag update, so the exact underlying Shiny/learnr
+  incompatibility causing `output_*_hidden` to never update is still not pinned down -- only
+  worth chasing further if a future Shiny/learnr upgrade needs `unstick_hidden_outputs()`
+  revisited.
+- Downgrading `shiny` below 1.9.0 was tried and abandoned: it dodges this bug but `shinychat`
+  (tutor chat) hard-requires `shiny >= 1.10.0` and refuses to load below it, so no version
+  satisfies both. Not needed now that the real fix is in place; shiny stays on 1.14.0.
+
+**Verified against the live app, post-fix** (all three modules, real Supabase DB, real
+gradethis grading, not just the isolated `debug_recalculating_bug/repro.Rmd` repro): Module
+1's `name-exercise` (both fail and pass paths), Module 2's `comment-exercise` and
+`fix-the-bug-exercise` (including the error-check path, and tutor chat auto-open + greeting
+on a failed attempt), and Module 3's `vectors-exercise` and `cumulative-exercise` (including
+its starting syntax-error path) -- plus quiz questions on topics beyond the first (Module 1's
+install-walkthrough quizzes) -- all render and grade correctly with the fix in place, with
+zero code changes to storage settings.
+
+**Diagnostic artifacts** (`debug_recalculating_bug/HANDOFF.md`, `debug_recalculating_bug/
+repro.Rmd`) are left in place as a record of the investigation but are not part of the
+production app and don't need to be kept in sync going forward.
+
+**A second-order finding turned out to be a red herring and its fix was reverted.** After the
+`unstick_hidden_outputs()` fix, automated (Path A) testing found a real but separate ~9-10
+second cold-start delay on a fresh R process's first exercise submission (traced to
+`rmarkdown`/`knitr` warm-up cost inside `learnr:::render_exercise()`), and added
+`warm_up_exercise_renderer()` (still in place -- harmless, and does measurably help this
+specific delay) plus a `grading_progress_indicator_css()` loading message (**removed**) to
+address it. When the user reported "still having the issue" a second time, it became clear
+this cold-start delay was NOT what they were experiencing -- the app owner reported the
+loading message appearing before the exercise could even be submitted, meaning the output
+frame was stuck in `.recalculating` from page load, not mid-submission. The CSS message was
+actively misleading in that state (implying grading was in progress when nothing had been
+submitted) and was removed. `warm_up_exercise_renderer()` was left in place since it's
+harmless and unrelated to the real, still-unresolved bug -- see `debug_recalculating_bug/
+HANDOFF.md`.
 
 Modules 1-3 are all fully built and tested end-to-end, in the same style: identity capture ->
 instructional/quiz content -> gated exercise(s), each backed by an always-available tutor

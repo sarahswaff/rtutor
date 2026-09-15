@@ -119,6 +119,90 @@ start_tutor_chat <- function(con, student_id, exercise_id) {
   )
 }
 
+#' ROOT-CAUSE FIX for learnr quiz/exercise outputs getting permanently stuck
+#' "recalculating" (see debug_recalculating_bug/HANDOFF.md for the full
+#' investigation). Shiny's session$clientData$output_<id>_hidden flag never
+#' flips back to FALSE for an output bound while its containing `##` topic
+#' is still hidden -- learnr's progressive-topic show/hide doesn't trigger
+#' Shiny's client-side visibility re-detection -- so shouldSuspend() (which
+#' reads that flag) keeps every such output suspended forever, and it never
+#' receives its first render. outputOptions(suspendWhenHidden = FALSE) is
+#' the documented per-output escape hatch, but learnr registers quiz/exercise
+#' sub-outputs (message_container, action_button_container, the exercise's
+#' own output frame, etc.) lazily and dynamically -- well after this
+#' function would run once at session start -- so they can't be patched by
+#' name up front. Instead, watch session$clientData's output_*_hidden keys
+#' (which reliably appear the moment each dynamic output binds, regardless
+#' of whether it's currently hidden) on a short timer, and patch each
+#' newly-seen output exactly once. Call this ONCE per module from any
+#' context="server" chunk -- it isn't scoped to a single exercise/question,
+#' and patches every quiz/exercise output in the whole tutorial session.
+unstick_hidden_outputs <- function(output, session) {
+  # TEMPORARY DIAGNOSTIC LOGGING -- added to check whether this function
+  # is even running / discovering outputs / succeeding when launched via
+  # RStudio's "Run Document" (see debug_recalculating_bug/HANDOFF.md, "The
+  # central open question", item 4). Remove once that's answered.
+  message(
+    "UNSTICK STARTED | pid=", Sys.getpid(),
+    " | shiny=", getNamespaceVersion("shiny"),
+    " | learnr=", getNamespaceVersion("learnr")
+  )
+  already_patched <- character(0)
+  shiny::observe({
+    shiny::invalidateLater(200, session)
+    cd_names <- names(shiny::reactiveValuesToList(session$clientData))
+    hidden_keys <- grep("^output_.*_hidden$", cd_names, value = TRUE)
+    ids <- sub("^output_(.*)_hidden$", "\\1", hidden_keys)
+    new_ids <- setdiff(ids, already_patched)
+    for (id in new_ids) {
+      ok <- tryCatch({
+        shiny::outputOptions(output, id, suspendWhenHidden = FALSE)
+        TRUE
+      }, error = function(e) FALSE)
+      if (ok) {
+        message(
+          "PATCHED: ", id,
+          " | hidden=",
+          session$clientData[[paste0("output_", id, "_hidden")]]
+        )
+        already_patched <<- c(already_patched, id)
+      }
+    }
+  })
+}
+
+#' The FIRST graded-exercise submission in a freshly-started R process takes
+#' ~9-10 seconds to resolve (confirmed via direct timing), with no loading
+#' indicator -- learnr's exercise evaluation (render_exercise(), which does
+#' a real rmarkdown/knitr render into a temp dir per submission) has a real
+#' first-use warm-up cost (lazy package loading/JIT) in a fresh R session,
+#' and on Windows this runs in-process (learnr's `inline_evaluator`, since
+#' the forked evaluator is POSIX-only), so nothing shields the student from
+#' it. A cold, silent 9-10 second stall on Submit Answer is easily mistaken
+#' for the exact "buttons don't work" bug this file's unstick_hidden_outputs()
+#' fixes -- confirmed empirically: a second Shiny session on an
+#' already-warmed R process resolves its first submission almost instantly.
+#' This function absorbs that one-time cost up front by rendering a trivial
+#' throwaway Rmd through the same rmarkdown/knitr path, so it's paid once
+#' during ordinary page-load latency (before a student ever reaches a
+#' graded exercise) instead of as a silent stall mid-exercise. Call this
+#' from the (non-`context="server"`) `setup` chunk -- NOT a server chunk --
+#' so it runs once when the tutorial is first rendered/started, not once
+#' per student session.
+warm_up_exercise_renderer <- function() {
+  tryCatch({
+    warm_dir <- tempfile("lrn-warmup")
+    dir.create(warm_dir)
+    warm_rmd <- file.path(warm_dir, "warmup.Rmd")
+    writeLines(c("```{r}", "1 + 1", "```"), warm_rmd)
+    rmarkdown::render(warm_rmd, output_dir = warm_dir, quiet = TRUE, envir = new.env())
+    unlink(warm_dir, recursive = TRUE)
+  }, error = function(e) {
+    message("warm_up_exercise_renderer() failed (non-fatal): ", conditionMessage(e))
+  })
+  invisible(NULL)
+}
+
 #' BS5 dependency injection, required by any module using bslib components
 #' (accordion(), chat_ui()) -- learnr's tutorial template loads Bootstrap 3
 #' by default, and the YAML `theme:` field only affects the static pandoc
