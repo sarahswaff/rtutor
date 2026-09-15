@@ -515,24 +515,57 @@ context), and Module 5's ggplot quiz + scatter exercise (confirming `fish_clean`
 carries over from Module 4's setup chunk with no module-5-local reconstruction, and
 `has_plot_output` plot rendering still works). Cross-checked directly against
 `exercise_attempts` in Supabase afterward -- every test attempt logged against the correct
-`exercise_key`, in the correct pass/fail state, in the correct order. Not yet
-re-verified: the remaining untouched exercises/quizzes (unchanged content, lower risk since
-nothing about their IDs or logic was touched by the merge) and a full production deploy.
+`exercise_key`, in the correct pass/fail state, in the correct order.
 
-**Deployment infrastructure added, following the exact per-module pattern:**
+**Deployed to Connect Cloud and confirmed working in production**: `deploy/course/` and
+`deploy/instructor_dashboard/` are both live content items. A real session against the
+deployed `course.Rmd` app logged a failed then a passing `module1_name_check` attempt to
+Supabase, checked directly against `exercise_attempts`. The 5 old per-module Connect Cloud
+deployments have been retired (removed from Connect Cloud only -- their source files,
+`tutorials/module_1.Rmd`...`module_5.Rmd` and `deploy/module_1`...`module_5`, are
+deliberately kept in the repo as reference/rollback, not deleted).
+
 `deploy/course/` is a flattened, self-contained copy (`course.Rmd` at the folder root,
 `R/db_utils.R` and `R/tutor_utils.R` alongside it, `source("R/...")` not `source("../R/...")`)
 with a generated `manifest.json`
 (`rsconnect::writeManifest(appDir = "deploy/course", appPrimaryDoc = "course.Rmd")`,
-confirmed `appmode: "rmd-shiny"`, primary doc `course.Rmd`). Regenerate the same way any
-time `tutorials/course.Rmd`, `R/db_utils.R`, or `R/tutor_utils.R` changes. Needs the same
-four `.Renviron` variables as every other tutorial deployment
-(`SUPABASE_DB_HOST`/`SUPABASE_DB_USER`/`SUPABASE_DB_PASSWORD`/`ANTHROPIC_API_KEY`) set in
-its own Connect Cloud dashboard settings. **Manual follow-up, not done as part of this
-work**: create the Connect Cloud content item for `deploy/course/`, verify it there, and
-only then decide when to retire the 5 old per-module Connect Cloud deployments and switch
-whatever link students are given over to the new one -- that's a rollout-timing call (it
-affects currently-enrolled students' bookmarked links), not a technical one.
+confirmed `appmode: "rmd-shiny"`, primary doc `course.Rmd`). **Regenerate the same way any
+time `tutorials/course.Rmd`, `R/db_utils.R`, or `R/tutor_utils.R` changes, and redeploy on
+Connect Cloud** -- a git push alone does not update the live app.
+
+### Install-section tutor chat (added after the merge)
+Module 1's "Installing R and RStudio" topic (and its three `###` sub-steps) originally had
+no tutor chat at all -- only the very last topic in Module 1 ("Quick system check") had
+one. Since installation is the one part of this course that genuinely depends on the
+student's own computer (OS, chip architecture, permission prompts) and the tutorial
+explicitly can't see any of that, a chat panel was added there too.
+
+It intentionally does NOT reuse `wire_tutor_chat()` -- every existing tutor chat is tied to
+a real row in the `exercises` table (used for both `chat_logs`' `NOT NULL` FK and for
+building the AI's context: title, learning objective, attempt history), and installation
+isn't a graded exercise. Rather than add a schema flag to mark a non-graded "exercise" row
+(considered, and the more "correct" long-term design, but more invasive), this uses a new,
+simpler function: **`wire_standalone_chat()`** (`R/tutor_utils.R`) -- same refresh-on-open
+mechanism as `wire_tutor_chat()` (a fresh `ellmer` client per accordion open), but with NO
+`student_id`, NO `exercise_key`, and NO `chat_logs`/`exercise_attempts` writes at all.
+**Consequence: these conversations are NOT logged anywhere and will NOT show up in the
+instructor dashboard's future chat-transcript feature** -- a deliberate tradeoff (this was
+explicitly the option chosen over the schema-flag approach when asked), not an oversight.
+Also has its own short, narrower system prompt (`INSTALL_HELP_SYSTEM_PROMPT`) instead of
+`TUTOR_SYSTEM_PROMPT`, since the latter is written entirely around "stuck on a graded
+exercise" framing (attempt-count escalation, not leaking an answer, grader feedback) that
+doesn't apply to install troubleshooting.
+
+**Verification note:** confirmed locally that the panel renders in the right place, opens
+on click, and shows its distinct greeting, with no server-side errors. Actually sending a
+message and getting an AI reply could NOT be confirmed through automated browser testing --
+attempting the same interaction against an already-proven, pre-existing tutor chat (Module
+1's "Quick system check") showed the identical symptom (no message appears, no reply),
+which points to a browser-automation limitation with `shinychat`'s custom chat input widget
+rather than a defect in this code (this project's own history already notes that real
+tutor conversations were originally confirmed by a human typing in an actual browser, not
+via automated testing). **A human should confirm this one manually in a real browser**
+before considering it fully done.
 
 
 ## Current status / immediate next step
@@ -680,14 +713,24 @@ future module:
 3. DONE: Modules 1-5 merged into one tutorial, `tutorials/course.Rmd` (see "Merged course
    tutorial" above), to free up Connect Cloud app slots for the dashboard. Verified locally
    end-to-end. `R/run_tutorial.R`'s `MODULE_FILE` now defaults to `"course.Rmd"`.
-4. Remaining, both needing the Connect Cloud dashboard (not done as part of this work):
-   - Push `deploy/course/` as its own new content item, verify it in production, then
-     decide when to retire the 5 old per-module deployments and update whatever link
-     students are given.
-   - Push `deploy/instructor_dashboard/` as its own content item (set the three
-     `SUPABASE_DB_*` vars plus `DASHBOARD_PASSWORD` in its dashboard settings), then get
-     real usage from the instructor to see if its three tabs actually answer the questions
-     they ask day-to-day, or need adjusting.
-5. Chat transcript viewer + help-type categorization for the instructor dashboard --
-   discussed but paused pending two open design questions (classification timing, category
-   taxonomy). Revisit when picking dashboard work back up.
+4. DONE: `deploy/course/` and `deploy/instructor_dashboard/` are both published to Connect
+   Cloud as their own content items. Confirmed genuinely working in production, not just
+   loading -- a real session against the deployed `course.Rmd` app logged a failed then a
+   passing `module1_name_check` attempt to Supabase (checked directly against
+   `exercise_attempts`).
+5. DONE: the 5 old per-module Connect Cloud deployments have been retired -- `course.Rmd`
+   is the only student-facing app now live. (Their source files are still in the repo on
+   purpose, per "Merged course tutorial" above.)
+6. DONE: added a standalone tutor chat to Module 1's "Installing R and RStudio" section
+   (see "Install-section tutor chat" above). **Needs one manual check**: a real human
+   sending a message and confirming the AI actually replies in a real browser -- this could
+   not be confirmed via automated testing (see that section for why), and hasn't been
+   deployed/redeployed to Connect Cloud yet either.
+7. Remaining:
+   - Get real instructor usage on the dashboard's three tabs to see if they actually answer
+     the day-to-day questions, or need adjusting.
+   - Chat transcript viewer + help-type categorization for the instructor dashboard --
+     discussed but paused pending two open design questions (classification timing,
+     category taxonomy). Revisit when picking dashboard work back up. Note the
+     install-section chat (item 6) would NOT appear there even once built, since it isn't
+     logged to `chat_logs` at all.

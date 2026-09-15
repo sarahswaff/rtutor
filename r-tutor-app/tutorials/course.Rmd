@@ -116,6 +116,11 @@ observeEvent(input$submit_name, {
 # graded exercise. See wire_tutor_chat() in R/tutor_utils.R.
 
 wire_tutor_chat("module1_name_check", "tutor_chat_m1_1", "tutor_accordion_m1_1", "Ask the Tutor", input, output, session)
+
+# Standalone install-help chat for "Installing R and RStudio" -- not tied to
+# a graded exercise, so it uses wire_standalone_chat() instead of
+# wire_tutor_chat(). See R/tutor_utils.R for why.
+wire_standalone_chat("tutor_chat_m1_install", "tutor_accordion_m1_install", "Ask the Tutor", input, output, session)
 ```
 
 ```{r, context="server"}
@@ -247,6 +252,24 @@ quiz_question_ui("install_quiz", "Which of these is true about the relationship 
 ```
 
 This tutorial runs entirely in your browser, so it has no way to see your own computer or confirm your install actually worked -- the steps below are the real, click-by-click process, but you're doing them in a separate window, alongside this one. Keep both open side by side if you can.
+
+Installation is the one part of this course that depends on your specific computer, so if something doesn't match what's described below, ask here rather than getting stuck.
+
+```{r, echo=FALSE}
+accordion(
+  id = "tutor_accordion_m1_install",
+  open = FALSE,
+  accordion_panel(
+    title = "Ask the Tutor",
+    chat_ui(
+      "tutor_chat_m1_install",
+      placeholder = "Ask about an installation problem...",
+      greeting = INSTALL_HELP_CHAT_GREETING,
+      allow_attachments = FALSE
+    )
+  )
+)
+```
 
 ### Step 1: Install R
 

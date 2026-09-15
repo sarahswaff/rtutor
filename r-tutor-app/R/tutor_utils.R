@@ -356,6 +356,65 @@ log_attempt_and_maybe_open_chat <- function(exercise_key, student_id, user_code,
   }
 }
 
+INSTALL_HELP_SYSTEM_PROMPT <- "
+You are a patient, encouraging assistant helping a complete beginner install R and RStudio on their own computer, as part of an introductory R course's setup steps. The student is likely non-technical and may be intimidated by anything that looks like an error.
+
+You cannot see the student's computer, screen, or files -- you only know what they tell you. Ask clarifying questions when you need more detail (their operating system, what step they're on, the exact text of any error message) rather than guessing.
+
+Common issues at this stage: downloading the wrong installer for their OS/chip (e.g. Intel vs. Apple silicon Macs), the installer needing to actually be run (not just downloaded), RStudio failing to detect R if R wasn't installed first or failed partway through, and permission/security prompts on the student's OS blocking the installer (normal Windows/Mac warnings for downloaded software, safe to proceed by design).
+
+Keep responses short, concrete, and encouraging -- a few sentences at most, unless walking through a specific multi-step fix. Never make the student feel like installation trouble means they're bad at this; it's normal and not a sign of things to come in the course.
+
+This is NOT a graded exercise -- there is no code to check and nothing to avoid revealing. Just help them get unstuck.
+"
+
+INSTALL_HELP_CHAT_GREETING <- "Hi! If you're running into trouble installing R or RStudio, tell me what's happening (your operating system and what step you're stuck on) and I'll help you work through it."
+
+#' A standalone tutor chat with no exercise/grading context and no DB
+#' logging -- for help that isn't tied to a specific graded exercise (e.g.
+#' installing R/RStudio, which every other tutor chat panel's plumbing
+#' assumes is not the case: wire_tutor_chat() requires a real row in
+#' `exercises` for its DB logging and context-building). Deliberately
+#' simpler than wire_tutor_chat(): no student_id, no exercise_key, no
+#' chat_logs/exercise_attempts writes, no auto-open-on-fail (there's no
+#' "attempt" to fail). A fresh ellmer client is built each time the
+#' accordion panel opens, same refresh-on-open pattern as wire_tutor_chat().
+wire_standalone_chat <- function(chat_id, accordion_id, panel_value, input, output, session) {
+  client <- shiny::reactiveVal(NULL)
+
+  refresh_chat <- function() {
+    tryCatch({
+      new_client <- ellmer::chat_anthropic(
+        model = "claude-haiku-4-5-20251001",
+        system_prompt = INSTALL_HELP_SYSTEM_PROMPT
+      )
+      client(new_client)
+      shinychat::chat_clear(chat_id, session = session)
+      shinychat::chat_set_greeting(chat_id, INSTALL_HELP_CHAT_GREETING, session = session)
+    }, error = function(e) {
+      message(paste("Starting standalone chat failed:", e$message))
+    })
+  }
+
+  shiny::observeEvent(input[[accordion_id]], {
+    if (panel_value %in% input[[accordion_id]]) {
+      refresh_chat()
+    }
+  }, ignoreInit = TRUE, ignoreNULL = FALSE)
+
+  shiny::observeEvent(input[[paste0(chat_id, "_user_input")]], {
+    shiny::req(client())
+    user_input_raw <- input[[paste0(chat_id, "_user_input")]]
+    stream <- client()$stream_async(!!!user_input_raw)
+    promises::then(
+      shinychat::chat_append(chat_id, stream, session = session),
+      onRejected = function(e) {
+        message(paste("Standalone tutor response failed:", conditionMessage(e)))
+      }
+    )
+  })
+}
+
 #' Wires up one tutor chat panel: a fresh ellmer client is built (via
 #' start_tutor_chat()) every time the accordion panel transitions from
 #' closed to open -- either the student opening it manually, or the
