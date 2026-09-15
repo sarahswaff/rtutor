@@ -1,0 +1,337 @@
+---
+title: "Module 2: Basic Code"
+output:
+  learnr::tutorial:
+    progressive: true
+    allow_skip: false
+    theme: !expr bslib::bs_theme(version = 5, bootswatch = "cerulean")
+runtime: shiny_prerendered
+---
+
+```{r setup, include=FALSE}
+library(learnr)
+library(gradethis)
+library(shiny)
+library(DBI)
+library(RPostgres)
+library(bslib)
+library(shinychat)
+library(ellmer)
+library(promises)
+
+# Shared database helper functions (get_con, get_or_create_student,
+# get_exercise_id, log_attempt, log_chat)
+source("R/db_utils.R")
+# Tutor chat context assembly + start_tutor_chat()
+source("R/tutor_utils.R")
+
+gradethis::gradethis_setup()
+
+# One-time warm-up of learnr's exercise renderer -- see
+# warm_up_exercise_renderer() in R/tutor_utils.R for why this exists.
+# Runs during this setup chunk (once per app process/render), not per
+# student session.
+warm_up_exercise_renderer()
+
+# Grading logic shared between each exercise's *-check and *-error-check
+# chunks. These are plain functions (not grade_this() objects -- a
+# grade_this() result can't safely be reused across multiple check
+# chunks, since gradethis rewires its enclosing environment per call
+# site) defined here in setup so both check chunks can see them; each
+# *-check/*-error-check chunk is just a thin grade_this() wrapper around
+# one of these. Without an explicit *-error-check chunk, a submission
+# that errors (e.g. a student accidentally breaks the syntax) would
+# silently fall through to gradethis's generic default error handler,
+# skipping our DB logging and tutor auto-open entirely.
+#
+# log_attempt_and_maybe_open_chat() and wire_tutor_chat() themselves are
+# shared across modules -- see R/tutor_utils.R.
+
+evaluate_comment_exercise <- function(user_code, stage) {
+  keep_active <- grepl('(?m)^\\s*print\\("Keep this line"\\)\\s*$', user_code, perl = TRUE)
+  comment_present <- grepl('(?m)^\\s*#.*Comment this line out', user_code, perl = TRUE)
+  comment_still_active <- grepl('(?m)^\\s*print\\("Comment this line out"\\)\\s*$', user_code, perl = TRUE)
+
+  passed <- keep_active && comment_present && !comment_still_active
+
+  feedback_message <- if (passed) {
+    "Nice -- the first line still runs and the second is safely commented out."
+  } else if (identical(stage, "error_check")) {
+    "That code doesn't run as-is -- check that both lines are still valid R (matching quotes and parentheses), just with the second one commented out."
+  } else if (!comment_present) {
+    "The second line still isn't commented out -- add a # at the very start of that line."
+  } else if (comment_still_active) {
+    "Looks like there might be two copies of that line -- make sure only the commented-out version remains."
+  } else {
+    "Make sure the first print() line is still there and uncommented, and the second line is commented out with #."
+  }
+
+  list(passed = passed, message = feedback_message)
+}
+
+evaluate_fix_the_bug_exercise <- function(result, stage) {
+  passed <- !is.null(result) && is.character(result) && identical(trimws(result), "Hello")
+
+  feedback_message <- if (passed) {
+    "Nice work -- that runs cleanly now."
+  } else if (identical(stage, "error_check")) {
+    "That's still erroring. Take a look at what R is telling you, and check whether Hello needs to be treated as text."
+  } else {
+    "The code runs without an error, but it should print the word Hello. Double check what you changed."
+  }
+
+  list(passed = passed, message = feedback_message)
+}
+```
+
+```{r, context="server"}
+# --- Identity capture -------------------------------------------------
+# Same pattern as module_1.Rmd: ask for a name on start, store the
+# resulting student_id on session$userData so exercise check code (which
+# runs semi-isolated from this chunk) can reach it via
+# shiny::getDefaultReactiveDomain().
+
+showModal(modalDialog(
+  title = "Welcome back!",
+  "Please enter your name to begin this tutorial.",
+  textInput("student_name", label = NULL, placeholder = "Your name"),
+  footer = actionButton("submit_name", "Start Tutorial"),
+  easyClose = FALSE
+))
+
+observeEvent(input$submit_name, {
+  req(input$student_name)
+  con <- get_con()
+  sid <- get_or_create_student(con, trimws(input$student_name))
+  dbDisconnect(con)
+
+  session$userData$student_id <- sid
+  removeModal()
+})
+```
+
+```{r, context="server"}
+# --- Tutor chat wiring --------------------------------------------------
+# Each graded exercise gets its own always-available (collapsed by
+# default) tutor chat panel. See wire_tutor_chat() in R/tutor_utils.R for
+# the full mechanism (fresh client per open, both directions logged).
+
+wire_tutor_chat("module2_comment_out", "tutor_chat_1", "tutor_accordion_1", "Ask the Tutor", input, output, session)
+wire_tutor_chat("module2_fix_error", "tutor_chat_2", "tutor_accordion_2", "Ask the Tutor", input, output, session)
+```
+
+```{r, context="server"}
+# --- Fix for quiz/exercise outputs getting stuck "recalculating" forever
+# on any topic beyond the first -- see unstick_hidden_outputs() in
+# R/tutor_utils.R for the full root-cause explanation.
+unstick_hidden_outputs(output, session)
+```
+
+## Welcome back
+
+```{r, echo=FALSE}
+bs5_theme_dependencies()
+```
+
+Module 1 got R and RStudio installed and gave you a tour of the panes. This module is where you start actually touching code -- packages, the console, comments, running code someone else wrote, and (probably most usefully) how to read an error message without panicking.
+
+You are **not** expected to write substantial code from scratch in this course. The goal is to get comfortable enough that running and adjusting code -- your instructor's, or an AI assistant's -- feels normal rather than intimidating.
+
+## Packages
+
+R on its own can do a lot, but most real work relies on **packages** -- bundles of extra functions other people have written. Getting a package ready to use is a two-step process:
+
+1. **`install.packages("packagename")`** -- downloads the package onto your computer. You only need to do this once per package (until you want to update it).
+2. **`library(packagename)`** -- loads that package into your *current* R session so its functions are available to use. You need to do this every time you start a new session and want to use that package.
+
+A common beginner mix-up: running `install.packages()` again every session (unnecessary -- it's already installed) instead of `library()` (which you do need every session).
+
+```{r packages-quiz, echo=FALSE}
+question("You already installed the tidyverse package last week. You're starting a new R session today and want to use it. What do you run?",
+  answer("install.packages(\"tidyverse\")", message = "That downloads it again -- not needed since it's already installed."),
+  answer("library(tidyverse)", correct = TRUE),
+  answer("Nothing -- it's automatically available.", message = "Not quite -- installed packages still need to be loaded with library() each session."),
+  allow_retry = TRUE
+)
+```
+
+## The Console
+
+The **Console** is where code actually executes, one command at a time. When you see a prompt like `>` with nothing after it, R is idle and waiting for your next command.
+
+Type a line of code into the Console and press Enter, and R runs it immediately -- there's no separate "run" step. This is great for quick checks (like testing what a function does), but it's not a great place to build up real work, because nothing you type there is automatically saved anywhere.
+
+That's what **scripts** are for -- files (usually ending in `.R`) where you write code that you can save, edit, and re-run later, rather than retyping it in the Console every time.
+
+```{r console-quiz, echo=FALSE}
+question("What's the main advantage of writing your code in a script instead of typing it directly into the Console?",
+  answer("Scripts run faster than the Console.", message = "Not about speed -- the code executes the same either way."),
+  answer("You can save, edit, and re-run a script later; Console history is easy to lose track of.", correct = TRUE),
+  answer("The Console can only run one line of code, ever.", message = "The Console can run many lines over a session -- it's just not saved as a file automatically."),
+  allow_retry = TRUE
+)
+```
+
+## Comments
+
+A **comment** is a line (or part of a line) that R ignores when running your code. In R, anything after a `#` on a line is a comment.
+
+Comments are useful for two main things:
+
+- **Notes to yourself or others** -- explaining *why* code does something, not just what it does.
+- **Temporarily turning off a line** -- if you want to skip a line without deleting it, put a `#` in front of it. This is extremely common when testing or debugging: comment a line out, see what changes, uncomment it later if you want it back.
+
+### Practice: comment out a line
+
+Below are two lines of code. Leave the first one exactly as it is, but use `#` to comment out the second one, so that only `"Keep this line"` gets printed when you submit. Don't delete the second line -- just comment it out.
+
+```{r comment-exercise, exercise=TRUE}
+print("Keep this line")
+print("Comment this line out")
+```
+
+```{r comment-exercise-check}
+grade_this({
+  session <- shiny::getDefaultReactiveDomain()
+  student_id <- if (!is.null(session)) session$userData$student_id else NA
+  result <- evaluate_comment_exercise(.user_code, .stage)
+  log_attempt_and_maybe_open_chat("module2_comment_out", student_id, .user_code, result$passed, result$message, "tutor_accordion_1", session)
+  if (result$passed) pass(result$message) else fail(result$message)
+})
+```
+
+```{r comment-exercise-error-check}
+grade_this({
+  session <- shiny::getDefaultReactiveDomain()
+  student_id <- if (!is.null(session)) session$userData$student_id else NA
+  result <- evaluate_comment_exercise(.user_code, .stage)
+  log_attempt_and_maybe_open_chat("module2_comment_out", student_id, .user_code, result$passed, result$message, "tutor_accordion_1", session)
+  if (result$passed) pass(result$message) else fail(result$message)
+})
+```
+
+Stuck, or want to double check your thinking? The tutor chat below is available any time -- before you submit, after a failed attempt, or even after you've already passed.
+
+```{r, echo=FALSE}
+accordion(
+  id = "tutor_accordion_1",
+  open = FALSE,
+  accordion_panel(
+    title = "Ask the Tutor",
+    chat_ui(
+      "tutor_chat_1",
+      placeholder = "Ask a question about this exercise...",
+      greeting = TUTOR_CHAT_GREETING,
+      allow_attachments = FALSE
+    )
+  )
+)
+```
+
+### Nice work
+
+Once you've got that exercise passing, you've got the core mechanic of comments down -- everything else about them is just judgment on when to use one.
+
+## Running code someone gives you
+
+In this course, you'll often be handed a chunk of R code -- from your instructor, from course materials, or from an AI assistant -- and your job is to run it, not to have written it from scratch. That's a completely normal, professional way to use R, and it's the main skill this module is building.
+
+In RStudio, the most common ways to run code are:
+
+- **Run the current line** -- click into the line in your script and press **Ctrl+Enter** (Cmd+Return on Mac). This runs just that line in the Console and moves your cursor to the next one.
+- **Run the whole script** -- click **Source** (or press Ctrl+Shift+Enter) to run every line in the file from top to bottom.
+
+```{r running-quiz, echo=FALSE}
+question("You've been given a 10-line script and just want to see what the whole thing does. What's the most efficient way to run it?",
+  answer("Click into each line one at a time and press Ctrl+Enter, ten separate times.", message = "That works, but it's not the most efficient option here."),
+  answer("Click Source to run the entire script at once.", correct = TRUE),
+  answer("Retype all 10 lines into the Console by hand.", message = "Retyping isn't necessary -- you can run the file directly."),
+  allow_retry = TRUE
+)
+```
+
+## Reading error messages
+
+Sooner or later, you'll run code and see red text instead of the output you expected. That's an **error message** -- and it's not a sign you've broken something permanently. It's R telling you, often quite specifically, what it couldn't do and why.
+
+A few error types you'll run into constantly:
+
+- **`object 'x' not found`** -- R looked for something named `x` and it doesn't exist yet in your session. Common cause: a typo, or forgetting to treat text as text (more on that in a second).
+- **`could not find function "f"`** -- usually means a package hasn't been loaded yet with `library()`.
+- **`unexpected symbol` / `unexpected ')'`** -- a syntax problem, like a missing comma, an extra or missing parenthesis, or a missing quotation mark.
+
+One especially common mistake for beginners: writing a word without quotation marks when you meant it as text. R treats unquoted words as the *names* of objects it should already know about -- so `print(Hello)` looks for an object literally named `Hello`, not the word "Hello."
+
+### Practice: fix the error
+
+The code below has exactly this problem. Fix it so that it runs without an error and prints the word `Hello`.
+
+```{r fix-the-bug-exercise, exercise=TRUE}
+print(Hello)
+```
+
+```{r fix-the-bug-exercise-check}
+grade_this({
+  session <- shiny::getDefaultReactiveDomain()
+  student_id <- if (!is.null(session)) session$userData$student_id else NA
+  result <- evaluate_fix_the_bug_exercise(.result, .stage)
+  log_attempt_and_maybe_open_chat("module2_fix_error", student_id, .user_code, result$passed, result$message, "tutor_accordion_2", session)
+  if (result$passed) pass(result$message) else fail(result$message)
+})
+```
+
+```{r fix-the-bug-exercise-error-check}
+grade_this({
+  session <- shiny::getDefaultReactiveDomain()
+  student_id <- if (!is.null(session)) session$userData$student_id else NA
+  result <- evaluate_fix_the_bug_exercise(.result, .stage)
+  log_attempt_and_maybe_open_chat("module2_fix_error", student_id, .user_code, result$passed, result$message, "tutor_accordion_2", session)
+  if (result$passed) pass(result$message) else fail(result$message)
+})
+```
+
+```{r, echo=FALSE}
+accordion(
+  id = "tutor_accordion_2",
+  open = FALSE,
+  accordion_panel(
+    title = "Ask the Tutor",
+    chat_ui(
+      "tutor_chat_2",
+      placeholder = "Ask a question about this exercise...",
+      greeting = TUTOR_CHAT_GREETING,
+      allow_attachments = FALSE
+    )
+  )
+)
+```
+
+### Nice work
+
+Errors like this will keep showing up throughout the course -- and now you've got a process for them: read the message, figure out what R was actually looking for, and fix that specific thing.
+
+## Getting help
+
+R has built-in documentation for almost everything, and checking it is faster than it sounds:
+
+- **`?function_name`** or **`help(function_name)`** -- opens that function's help page (arguments, examples, what it returns) in the Help pane.
+- **`args(function_name)`** -- a quick shortcut that just shows you what arguments a function takes, without opening the full page.
+
+Later in this course, you may also have an AI assistant available to ask questions like this to directly -- but `?` is still worth knowing, since it's always there, works offline, and gives you the authoritative answer straight from the package itself.
+
+```{r help-quiz, echo=FALSE}
+question("You want to know what arguments the mean() function accepts. What's the fastest way to check, from inside R?",
+  answer("?mean", correct = TRUE),
+  answer("Guess and see what error you get.", message = "That works eventually, but it's not the fastest or most reliable way."),
+  answer("Reinstall R.", message = "Not related to checking a function's arguments."),
+  allow_retry = TRUE
+)
+```
+
+## Wrapping up
+
+You've now covered packages, the console vs. scripts, comments, running provided code, reading error messages, and finding help -- the core habits that make everything after this feel far less unfamiliar.
+
+### Up next
+
+Module 3 gets into actual data: data types, naming conventions, vectors, assignment, and basic functions.

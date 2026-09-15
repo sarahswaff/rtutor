@@ -1,0 +1,544 @@
+---
+title: "Module 3: Data"
+output:
+  learnr::tutorial:
+    progressive: true
+    allow_skip: false
+    theme: !expr bslib::bs_theme(version = 5, bootswatch = "cerulean")
+runtime: shiny_prerendered
+---
+
+```{r setup, include=FALSE}
+library(learnr)
+library(gradethis)
+library(shiny)
+library(DBI)
+library(RPostgres)
+library(bslib)
+library(shinychat)
+library(ellmer)
+library(promises)
+
+# Shared database helper functions (get_con, get_or_create_student,
+# get_exercise_id, log_attempt, log_chat)
+source("R/db_utils.R")
+# Tutor chat context assembly, start_tutor_chat(), and the shared
+# bs5_theme_dependencies()/wire_tutor_chat()/log_attempt_and_maybe_open_chat()
+# wiring used by every module's tutor chat panel.
+source("R/tutor_utils.R")
+
+gradethis::gradethis_setup()
+
+# One-time warm-up of learnr's exercise renderer -- see
+# warm_up_exercise_renderer() in R/tutor_utils.R for why this exists.
+# Runs during this setup chunk (once per app process/render), not per
+# student session.
+warm_up_exercise_renderer()
+
+# Grading logic shared between each exercise's *-check and *-error-check
+# chunks. Plain functions (not grade_this() objects -- a grade_this()
+# result can't safely be reused across multiple check chunks, since
+# gradethis rewires its enclosing environment per call site) defined
+# here in setup so both check chunks per exercise can see them; each
+# *-check/*-error-check chunk is just a thin grade_this() wrapper around
+# one of these.
+#
+# log_attempt_and_maybe_open_chat() and wire_tutor_chat() themselves are
+# shared across modules -- see R/tutor_utils.R.
+
+evaluate_assignment_exercise <- function(user_code, result, stage) {
+  has_apples <- grepl("apples\\s*<-", user_code)
+  has_oranges <- grepl("oranges\\s*<-", user_code)
+  correct_result <- is.numeric(result) && length(result) == 1 && isTRUE(result == 8)
+
+  passed <- has_apples && has_oranges && correct_result
+
+  feedback_message <- if (passed) {
+    "Nice -- apples and oranges assigned, and the total comes out to 8."
+  } else if (identical(stage, "error_check")) {
+    "That code doesn't run as-is -- check that both assignments and the final line are valid R."
+  } else if (!has_apples || !has_oranges) {
+    "Make sure you're assigning values to both `apples` and `oranges` using `<-`, replacing each `FIXME`."
+  } else {
+    "apples and oranges are assigned, but the last line doesn't come out to 8 yet -- check the values you gave each variable."
+  }
+
+  list(passed = passed, message = feedback_message)
+}
+
+evaluate_vectors_exercise <- function(user_code, result, stage) {
+  uses_c <- grepl("c\\(", user_code)
+  uses_index <- grepl("\\[", user_code)
+  correct_result <- is.numeric(result) && length(result) == 1 && isTRUE(result == 20)
+
+  passed <- uses_c && uses_index && correct_result
+
+  feedback_message <- if (passed) {
+    "That's it -- a vector of four numbers, and indexing pulled out the right one."
+  } else if (identical(stage, "error_check")) {
+    "That code doesn't run as-is -- check the commas inside c(...) and the brackets used for indexing."
+  } else if (!uses_c) {
+    "Build the vector with c(...), replacing the FIXME with the four numbers listed above."
+  } else if (!uses_index) {
+    "Once `scores` exists, use square brackets (like scores[FIXME]) to pull out one element."
+  } else {
+    "scores exists and you're indexing into it, but the result isn't 20 yet -- double check which position you're asking for, and that the vector's values are in order."
+  }
+
+  list(passed = passed, message = feedback_message)
+}
+
+evaluate_fix_comparison_exercise <- function(user_code, result, stage) {
+  kept_original_value <- grepl("temperature\\s*<-\\s*75", user_code)
+  uses_comparison <- grepl("==", user_code)
+  correct_result <- is.logical(result) && length(result) == 1 && isTRUE(result == FALSE)
+
+  passed <- kept_original_value && uses_comparison && correct_result
+
+  feedback_message <- if (passed) {
+    "Right -- that's a comparison now, temperature is still 75, and 75 == 80 correctly comes out FALSE."
+  } else if (identical(stage, "error_check")) {
+    "That code doesn't run as-is -- check that the second line is a complete, valid comparison."
+  } else if (!kept_original_value) {
+    "temperature's value changed from its original 75 -- make sure the second line only *compares* temperature to 80, without reassigning temperature itself."
+  } else if (!uses_comparison) {
+    "The second line is still doing an assignment, not a comparison -- R's comparison operator is ==, not a single =."
+  } else {
+    "You're comparing now, but the result isn't right yet -- think about whether 75 actually equals 80."
+  }
+
+  list(passed = passed, message = feedback_message)
+}
+
+evaluate_cumulative_exercise <- function(user_code, result, envir, stage) {
+  has_prices <- !is.null(envir) && exists("prices", envir = envir, inherits = FALSE) &&
+    is.numeric(get("prices", envir = envir)) &&
+    length(get("prices", envir = envir)) == 4
+  has_tax_rate <- !is.null(envir) && exists("tax_rate", envir = envir, inherits = FALSE)
+  correct_result <- is.logical(result) && length(result) == 1 && isTRUE(result == TRUE)
+
+  passed <- has_prices && has_tax_rate && correct_result
+
+  feedback_message <- if (passed) {
+    "Everything checks out -- prices is a 4-item vector, tax_rate is defined, and the final comparison correctly comes out TRUE."
+  } else if (identical(stage, "error_check")) {
+    "That code still doesn't run -- work through the error message one issue at a time. It's telling you exactly where R got stuck."
+  } else if (!has_prices) {
+    "`prices` should end up as a vector of 4 numbers -- double check the values inside c(...)."
+  } else if (!has_tax_rate) {
+    "`tax_rate` doesn't exist yet -- check the variable name matches exactly everywhere it's used."
+  } else {
+    "The script runs and your objects look right, but the final comparison isn't coming out TRUE yet -- walk back through the arithmetic."
+  }
+
+  list(passed = passed, message = feedback_message)
+}
+```
+
+```{r, context="server"}
+# --- Identity capture -------------------------------------------------
+# Same pattern as module_1.Rmd/module_2.Rmd: ask for a name on start,
+# store the resulting student_id on session$userData so exercise check
+# code (which runs semi-isolated from this chunk) can reach it via
+# shiny::getDefaultReactiveDomain().
+
+showModal(modalDialog(
+  title = "Welcome back!",
+  "Please enter your name to begin this tutorial.",
+  textInput("student_name", label = NULL, placeholder = "Your name"),
+  footer = actionButton("submit_name", "Start Tutorial"),
+  easyClose = FALSE
+))
+
+observeEvent(input$submit_name, {
+  req(input$student_name)
+  con <- get_con()
+  sid <- get_or_create_student(con, trimws(input$student_name))
+  dbDisconnect(con)
+
+  session$userData$student_id <- sid
+  removeModal()
+})
+```
+
+```{r, context="server"}
+# --- Tutor chat wiring --------------------------------------------------
+# Each graded exercise gets its own always-available (collapsed by
+# default) tutor chat panel. See wire_tutor_chat() in R/tutor_utils.R for
+# the full mechanism (fresh client per open, both directions logged).
+
+wire_tutor_chat("module3_assignment", "tutor_chat_1", "tutor_accordion_1", "Ask the Tutor", input, output, session)
+wire_tutor_chat("module3_vectors", "tutor_chat_2", "tutor_accordion_2", "Ask the Tutor", input, output, session)
+wire_tutor_chat("module3_fix_comparison", "tutor_chat_3", "tutor_accordion_3", "Ask the Tutor", input, output, session)
+wire_tutor_chat("module3_cumulative", "tutor_chat_4", "tutor_accordion_4", "Ask the Tutor", input, output, session)
+```
+
+```{r, context="server"}
+# --- Fix for quiz/exercise outputs getting stuck "recalculating" forever
+# on any topic beyond the first -- see unstick_hidden_outputs() in
+# R/tutor_utils.R for the full root-cause explanation.
+unstick_hidden_outputs(output, session)
+```
+
+## Welcome back
+
+```{r, echo=FALSE}
+bs5_theme_dependencies()
+```
+
+Modules 1 and 2 got you comfortable with R and RStudio as tools -- installing, running code, reading errors. This module is where you start actually working with **data**: the basic building blocks (data types, vectors, variables) that everything later in this course sits on top of.
+
+A quick preview of what "actual code" looks like -- this line just prints a short greeting:
+
+```{r hello-world-demo, echo=TRUE}
+print("Hello, world!")
+```
+
+That's it -- a function (`print`) called with a value in parentheses. Most of what follows is variations on that same basic shape.
+
+## Data types
+
+Every value in R has a **type**. The three you'll run into constantly:
+
+- **numeric** -- numbers, like `5` or `3.14`
+- **character** -- text, always wrapped in quotes, like `"hello"`
+- **logical** -- `TRUE` or `FALSE`
+
+You can check any value's type with `class()`:
+
+```{r class-demo, echo=TRUE}
+class(5)
+class("hello")
+class(TRUE)
+```
+
+Mixing these up is a common source of errors -- for example, `5` and `"5"` look similar but behave very differently (you can do math with the first, not the second).
+
+```{r types-quiz, echo=FALSE}
+question("What is the data type of the value TRUE?",
+  answer("numeric", message = "Not quite -- TRUE isn't a number."),
+  answer("character", message = "Not quite -- TRUE isn't in quotes, so it isn't text."),
+  answer("logical", correct = TRUE),
+  allow_retry = TRUE
+)
+```
+
+## Naming conventions
+
+Variable names in R follow a few rules:
+
+- Can contain letters, numbers, `.`, and `_`
+- Cannot start with a number
+- Cannot contain spaces
+- Are case-sensitive -- `Score` and `score` are two different variables
+- Can't be one of R's reserved words (`TRUE`, `FALSE`, `if`, `for`, etc.)
+
+Style-wise, this course uses `snake_case` (lowercase words separated by underscores, like `student_score`) -- you'll see that convention throughout.
+
+```{r naming-quiz, echo=FALSE}
+question("Which of these is a valid R variable name?",
+  answer("2nd_attempt", message = "Variable names can't start with a number."),
+  answer("student score", message = "Variable names can't contain spaces."),
+  answer("student_score", correct = TRUE),
+  answer("TRUE", message = "TRUE is a reserved word in R -- it can't be used as a variable name."),
+  allow_retry = TRUE
+)
+```
+
+## Assignment
+
+**Assignment** is how you store a value in a variable so you can use it later, using the `<-` operator (read as "gets"):
+
+```{r assignment-demo, echo=TRUE}
+student_score <- 92
+student_score
+```
+
+You'll sometimes see `=` used for assignment too, and at the top level it works the same way -- but this course sticks to `<-`, since `=` also means something different (comparison, using `==`) that you'll run into shortly.
+
+### Practice: assign and combine
+
+Below, assign the number `5` to `apples` and the number `3` to `oranges`, replacing each `FIXME`. Leave the last line as-is -- once both variables are assigned correctly, it should evaluate to `8`.
+
+```{r assignment-exercise, exercise=TRUE}
+apples <- FIXME
+oranges <- FIXME
+apples + oranges
+```
+
+```{r assignment-exercise-check}
+grade_this({
+  session <- shiny::getDefaultReactiveDomain()
+  student_id <- if (!is.null(session)) session$userData$student_id else NA
+  result <- evaluate_assignment_exercise(.user_code, .result, .stage)
+  log_attempt_and_maybe_open_chat("module3_assignment", student_id, .user_code, result$passed, result$message, "tutor_accordion_1", session)
+  if (result$passed) pass(result$message) else fail(result$message)
+})
+```
+
+```{r assignment-exercise-error-check}
+grade_this({
+  session <- shiny::getDefaultReactiveDomain()
+  student_id <- if (!is.null(session)) session$userData$student_id else NA
+  result <- evaluate_assignment_exercise(.user_code, .result, .stage)
+  log_attempt_and_maybe_open_chat("module3_assignment", student_id, .user_code, result$passed, result$message, "tutor_accordion_1", session)
+  if (result$passed) pass(result$message) else fail(result$message)
+})
+```
+
+Stuck, or want to double check your thinking? The tutor chat below is available any time -- before you submit, after a failed attempt, or even after you've already passed.
+
+```{r, echo=FALSE}
+accordion(
+  id = "tutor_accordion_1",
+  open = FALSE,
+  accordion_panel(
+    title = "Ask the Tutor",
+    chat_ui(
+      "tutor_chat_1",
+      placeholder = "Ask a question about this exercise...",
+      greeting = TUTOR_CHAT_GREETING,
+      allow_attachments = FALSE
+    )
+  )
+)
+```
+
+## Vectors
+
+A **vector** is a sequence of values of the same type, built with `c()` (short for "combine"):
+
+```{r vector-demo, echo=TRUE}
+heights <- c(64, 68, 71, 66)
+heights
+```
+
+You can pull out one element by its position using square brackets -- R counts positions starting from **1**, not 0:
+
+```{r vector-index-demo, echo=TRUE}
+heights[1]
+```
+
+### Practice: build and index a vector
+
+Below, build a vector called `scores` containing the numbers `10`, `20`, `30`, and `40` in that order, replacing the first `FIXME`. Then, on the last line, index into `scores` to retrieve its **second** element, replacing the second `FIXME`.
+
+```{r vectors-exercise, exercise=TRUE}
+scores <- c(FIXME)
+scores[FIXME]
+```
+
+```{r vectors-exercise-check}
+grade_this({
+  session <- shiny::getDefaultReactiveDomain()
+  student_id <- if (!is.null(session)) session$userData$student_id else NA
+  result <- evaluate_vectors_exercise(.user_code, .result, .stage)
+  log_attempt_and_maybe_open_chat("module3_vectors", student_id, .user_code, result$passed, result$message, "tutor_accordion_2", session)
+  if (result$passed) pass(result$message) else fail(result$message)
+})
+```
+
+```{r vectors-exercise-error-check}
+grade_this({
+  session <- shiny::getDefaultReactiveDomain()
+  student_id <- if (!is.null(session)) session$userData$student_id else NA
+  result <- evaluate_vectors_exercise(.user_code, .result, .stage)
+  log_attempt_and_maybe_open_chat("module3_vectors", student_id, .user_code, result$passed, result$message, "tutor_accordion_2", session)
+  if (result$passed) pass(result$message) else fail(result$message)
+})
+```
+
+Stuck, or want to double check your thinking? The tutor chat below is available any time -- before you submit, after a failed attempt, or even after you've already passed.
+
+```{r, echo=FALSE}
+accordion(
+  id = "tutor_accordion_2",
+  open = FALSE,
+  accordion_panel(
+    title = "Ask the Tutor",
+    chat_ui(
+      "tutor_chat_2",
+      placeholder = "Ask a question about this exercise...",
+      greeting = TUTOR_CHAT_GREETING,
+      allow_attachments = FALSE
+    )
+  )
+)
+```
+
+## Data structures
+
+Beyond single vectors, R has a few other ways of organizing data:
+
+- **vector** -- a sequence of values, all the same type (what you just built above)
+- **list** -- a sequence of values that *can* mix types (a number, some text, even another vector, all in one list)
+- **data frame** -- a table, like a spreadsheet: rows are observations, columns are variables, and each column is really just a vector
+
+You'll work hands-on with data frames starting in Module 4 -- for now, just recognize the terms.
+
+```{r structures-quiz, echo=FALSE}
+question("Which data structure is organized like a spreadsheet, with rows and columns?",
+  answer("vector", message = "A vector is a single sequence of values -- no rows/columns structure."),
+  answer("list", message = "A list can mix types, but it isn't organized into rows and columns."),
+  answer("data frame", correct = TRUE),
+  allow_retry = TRUE
+)
+```
+
+## Basic functions and comparisons
+
+You've already used a few **functions** -- `print()`, `class()`, `c()`. Functions take input in parentheses and do something with it. A few more you'll see often:
+
+- **`sum(x)`** -- adds up all values in a vector
+- **`mean(x)`** -- the average of a vector's values
+- **`round(x, n)`** -- rounds a number to `n` decimal places
+
+**Comparisons** ask a yes/no question and return `TRUE` or `FALSE`, using operators like `==` (equal to), `!=` (not equal to), `<`, `>`, `<=`, `>=`:
+
+```{r comparison-demo, echo=TRUE}
+10 > 7
+10 == 7
+```
+
+The most common beginner mistake here: writing a single `=` when you meant a comparison. A single `=` at the top level *assigns* a value (like `<-` does); only `==` *compares* two values. These look almost identical but do very different things.
+
+```{r comparison-quiz, echo=FALSE}
+question("You want to check whether `score` is equal to 100, without changing its value. Which line does that?",
+  answer("score = 100", message = "That assigns 100 to score -- it changes score's value rather than checking it."),
+  answer("score == 100", correct = TRUE),
+  answer("score <- 100", message = "That also assigns -- it doesn't check anything."),
+  allow_retry = TRUE
+)
+```
+
+### Practice: fix the comparison
+
+The code below is supposed to check whether `temperature` is equal to `80`, **without** changing `temperature`'s original value of `75`. Right now it does the opposite -- fix the second line so it performs a comparison instead of an assignment.
+
+```{r fix-comparison-exercise, exercise=TRUE}
+temperature <- 75
+temperature = 80
+```
+
+```{r fix-comparison-exercise-check}
+grade_this({
+  session <- shiny::getDefaultReactiveDomain()
+  student_id <- if (!is.null(session)) session$userData$student_id else NA
+  result <- evaluate_fix_comparison_exercise(.user_code, .result, .stage)
+  log_attempt_and_maybe_open_chat("module3_fix_comparison", student_id, .user_code, result$passed, result$message, "tutor_accordion_3", session)
+  if (result$passed) pass(result$message) else fail(result$message)
+})
+```
+
+```{r fix-comparison-exercise-error-check}
+grade_this({
+  session <- shiny::getDefaultReactiveDomain()
+  student_id <- if (!is.null(session)) session$userData$student_id else NA
+  result <- evaluate_fix_comparison_exercise(.user_code, .result, .stage)
+  log_attempt_and_maybe_open_chat("module3_fix_comparison", student_id, .user_code, result$passed, result$message, "tutor_accordion_3", session)
+  if (result$passed) pass(result$message) else fail(result$message)
+})
+```
+
+Stuck, or want to double check your thinking? The tutor chat below is available any time -- before you submit, after a failed attempt, or even after you've already passed.
+
+```{r, echo=FALSE}
+accordion(
+  id = "tutor_accordion_3",
+  open = FALSE,
+  accordion_panel(
+    title = "Ask the Tutor",
+    chat_ui(
+      "tutor_chat_3",
+      placeholder = "Ask a question about this exercise...",
+      greeting = TUTOR_CHAT_GREETING,
+      allow_attachments = FALSE
+    )
+  )
+)
+```
+
+## Importing data
+
+So far every value has been typed directly into your code. In practice, most real data lives in files -- most commonly `.csv` files -- and you **import** it into R rather than retyping it.
+
+The base R function for this is `read.csv("filename.csv")`, which reads a CSV file into a data frame. The tidyverse equivalent, `readr::read_csv()`, does the same thing with a few conveniences (faster, slightly stricter about column types).
+
+Either way, R needs to know *where* the file is -- which is exactly why your working directory (Module 1) matters here: file paths are usually given relative to it.
+
+In this course, you likely won't be importing files from scratch very often -- import code is often provided as part of a script, similar to how you've already been handed code to run in Module 2. What matters most right now is recognizing what import is for and roughly how it works, not memorizing every argument.
+
+```{r import-quiz, echo=FALSE}
+question("Why would you import a data file instead of typing the data directly into your script?",
+  answer("Typing data by hand doesn't work in R.", message = "It works fine for small amounts of data -- import is about practicality, not a hard limitation."),
+  answer("Real datasets are often too large (or come from someone else) to reasonably retype, and importing keeps your script in sync with the original data.", correct = TRUE),
+  answer("Imported data doesn't need a working directory.", message = "It's the opposite -- import is exactly where the working directory matters most."),
+  allow_retry = TRUE
+)
+```
+
+## Putting it together
+
+You've now covered data types, naming, assignment, vectors, data structures, functions, comparisons, and import. Real code rarely uses just one of these skills in isolation -- so this last exercise mixes several together, and asks you to fix more than one problem at once.
+
+### Practice: fix the receipt calculation
+
+The script below is supposed to calculate a total with tax and check whether it's at least $10 -- but it has more than one problem. Fix it so it runs without errors and the last line evaluates to `TRUE`. (Hint: work through any error message one issue at a time, same as in Module 2.)
+
+```{r cumulative-exercise, exercise=TRUE}
+prices <- c(2.50, 3.75, 1.25 4.00)
+tax_rate = 0.08
+total <- sum(prices)
+final_total <- total + (total * tax rate)
+final_total >= 10
+```
+
+```{r cumulative-exercise-check}
+grade_this({
+  session <- shiny::getDefaultReactiveDomain()
+  student_id <- if (!is.null(session)) session$userData$student_id else NA
+  result <- evaluate_cumulative_exercise(.user_code, .result, .envir_result, .stage)
+  log_attempt_and_maybe_open_chat("module3_cumulative", student_id, .user_code, result$passed, result$message, "tutor_accordion_4", session)
+  if (result$passed) pass(result$message) else fail(result$message)
+})
+```
+
+```{r cumulative-exercise-error-check}
+grade_this({
+  session <- shiny::getDefaultReactiveDomain()
+  student_id <- if (!is.null(session)) session$userData$student_id else NA
+  result <- evaluate_cumulative_exercise(.user_code, .result, .envir_result, .stage)
+  log_attempt_and_maybe_open_chat("module3_cumulative", student_id, .user_code, result$passed, result$message, "tutor_accordion_4", session)
+  if (result$passed) pass(result$message) else fail(result$message)
+})
+```
+
+Stuck, or want to double check your thinking? The tutor chat below is available any time -- before you submit, after a failed attempt, or even after you've already passed.
+
+```{r, echo=FALSE}
+accordion(
+  id = "tutor_accordion_4",
+  open = FALSE,
+  accordion_panel(
+    title = "Ask the Tutor",
+    chat_ui(
+      "tutor_chat_4",
+      placeholder = "Ask a question about this exercise...",
+      greeting = TUTOR_CHAT_GREETING,
+      allow_attachments = FALSE
+    )
+  )
+)
+```
+
+### Nice work
+
+That last exercise had several moving pieces at once -- a missing comma, a variable name mismatch, and a comparison -- which is a more realistic picture of debugging than fixing one isolated line at a time.
+
+## Wrapping up
+
+You've now covered data types, naming conventions, assignment, vectors, data structures, basic functions and comparisons, and importing data -- the fundamentals everything later in this course builds on.
+
+### Up next
+
+Module 4 moves into cleaning up real data: inspecting a data frame, renaming columns, indexing/subsetting, and the dplyr verbs (filter, select, mutate, arrange, group_by, summarize).

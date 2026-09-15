@@ -1,0 +1,281 @@
+---
+title: "Module 1: Introduction to R and RStudio"
+output:
+  learnr::tutorial:
+    progressive: true
+    allow_skip: false
+    theme: !expr bslib::bs_theme(version = 5, bootswatch = "cerulean")
+runtime: shiny_prerendered
+---
+
+```{r setup, include=FALSE}
+library(learnr)
+library(gradethis)
+library(shiny)
+library(DBI)
+library(RPostgres)
+library(bslib)
+library(shinychat)
+library(ellmer)
+library(promises)
+
+# Shared database helper functions (get_con, get_or_create_student,
+# get_exercise_id, log_attempt, log_chat)
+source("R/db_utils.R")
+# Tutor chat context assembly, start_tutor_chat(), and the shared
+# bs5_theme_dependencies()/wire_tutor_chat()/log_attempt_and_maybe_open_chat()
+# wiring used by every module's tutor chat panel.
+source("R/tutor_utils.R")
+
+gradethis::gradethis_setup()
+
+# One-time warm-up of learnr's exercise renderer -- see
+# warm_up_exercise_renderer() in R/tutor_utils.R for why this exists.
+# Runs during this setup chunk (once per app process/render), not per
+# student session.
+warm_up_exercise_renderer()
+
+# Grading logic for this module's one exercise. A plain function (not a
+# grade_this() object -- see module_2.Rmd's setup chunk for why) so both
+# the *-check and *-error-check chunks below can share it.
+evaluate_name_exercise <- function(result, stage) {
+  passed <- TRUE
+  feedback_message <- "Nice -- that's exactly right! Your response has been recorded."
+
+  if (is.null(result) || !is.character(result) || nchar(trimws(result)) == 0) {
+    passed <- FALSE
+    feedback_message <- if (identical(stage, "error_check")) {
+      "That code doesn't run as-is -- check that your name is wrapped in matching quotation marks."
+    } else {
+      "Make sure to type your name inside quotation marks."
+    }
+  } else if (identical(trimws(result), "___")) {
+    passed <- FALSE
+    feedback_message <- "Looks like the placeholder is still there -- replace `___` with your own name."
+  }
+
+  list(passed = passed, message = feedback_message)
+}
+```
+
+```{r, context="server"}
+# --- Identity capture -------------------------------------------------
+# Every tutorial session starts by asking for a name. This is a
+# deliberately simple stand-in for real identity -- no roster/Canvas
+# matching yet. The resulting student_id is stored on session$userData,
+# which is the safe, session-scoped place to keep it so that exercise
+# checking code (which runs in a more isolated context) can still reach
+# it via shiny::getDefaultReactiveDomain().
+
+showModal(modalDialog(
+  title = "Welcome!",
+  "Please enter your name to begin this tutorial.",
+  textInput("student_name", label = NULL, placeholder = "Your name"),
+  footer = actionButton("submit_name", "Start Tutorial"),
+  easyClose = FALSE
+))
+
+observeEvent(input$submit_name, {
+  req(input$student_name)
+  con <- get_con()
+  sid <- get_or_create_student(con, trimws(input$student_name))
+  dbDisconnect(con)
+
+  session$userData$student_id <- sid
+  removeModal()
+})
+```
+
+```{r, context="server"}
+# --- Tutor chat wiring --------------------------------------------------
+# Always-available (collapsed by default) tutor chat panel for the one
+# graded exercise. See wire_tutor_chat() in R/tutor_utils.R.
+
+wire_tutor_chat("module1_name_check", "tutor_chat_1", "tutor_accordion_1", "Ask the Tutor", input, output, session)
+```
+
+```{r, context="server"}
+# --- Fix for quiz/exercise outputs getting stuck "recalculating" forever
+# on any topic beyond the first -- see unstick_hidden_outputs() in
+# R/tutor_utils.R for the full root-cause explanation.
+unstick_hidden_outputs(output, session)
+```
+
+## Welcome
+
+```{r, echo=FALSE}
+bs5_theme_dependencies()
+```
+
+This tutorial is the first step before we get into any real course material. The goal here isn't to make you a programmer -- it's to make sure you're comfortable with R and RStudio as tools, so that later material (which may come from your instructor or from an AI assistant) doesn't feel unfamiliar.
+
+Nothing in this module involves writing real R code yet -- that starts in Module 2.
+
+## Installing R and RStudio
+
+R and RStudio are two different pieces of software that work together:
+
+- **R** is the actual programming language -- the engine that runs your code.
+- **RStudio** is an *interface* for working with R more comfortably -- it doesn't replace R, it sits on top of it.
+
+You install them in that order: R first (from CRAN), then RStudio (from posit.co), since RStudio needs an existing R installation to attach to.
+
+```{r install-quiz, echo=FALSE}
+question("Which of these is true about the relationship between R and RStudio?",
+  answer("RStudio replaces R -- you only need to install RStudio.", message = "Not quite -- RStudio needs R installed underneath it."),
+  answer("R is the language/engine, and RStudio is an interface built on top of it.", correct = TRUE),
+  answer("R and RStudio are two unrelated tools with no connection.", message = "They're closely related -- RStudio is built specifically to work with R."),
+  allow_retry = TRUE
+)
+```
+
+This tutorial runs entirely in your browser, so it has no way to see your own computer or confirm your install actually worked -- the steps below are the real, click-by-click process, but you're doing them in a separate window, alongside this one. Keep both open side by side if you can.
+
+### Step 1: Install R
+
+1. Go to **[cran.r-project.org](https://cran.r-project.org)** -- this is CRAN, the official source for R. (Don't search for "R" in a general search engine first -- it's a one-letter name and the results are mostly noise. Go straight to CRAN.)
+2. Near the top, click the download link for your operating system -- **Download R for Windows**, **macOS**, or **Linux**.
+3. **Windows:** click **base**, then click the large **Download R-4.x.x for Windows** link. Run the downloaded `.exe` file, and click through the installer -- **Next**, **Next**, **Install**, **Finish** -- accepting every default option. You don't need to change anything.
+4. **Mac:** you'll see two `.pkg` links, one for **Apple silicon (arm64)** and one for **Intel (x86_64)**. If you're not sure which chip your Mac has, check the Apple menu (top-left) > **About This Mac**. Download the matching one, open it, and follow the installer, accepting the defaults.
+
+That's it for this step -- once the installer finishes, R itself is installed, but you won't see any new icon to click yet. That's expected; R on its own has no visible interface. That's exactly what RStudio is for, which is the next step.
+
+```{r install-r-quiz, echo=FALSE}
+question("You've just downloaded the R installer file (the .exe or .pkg). What should you do with it?",
+  answer("Delete it -- you don't need it once it's downloaded.", message = "You need to actually run it to install R -- downloading alone doesn't install anything."),
+  answer("Open/run it and click through the installation wizard, accepting the defaults.", correct = TRUE),
+  answer("Rename it to \"RStudio\" so it opens the right program.", message = "Renaming a file doesn't change what it is -- this installs R, not RStudio, regardless of its name."),
+  allow_retry = TRUE
+)
+```
+
+### Step 2: Install RStudio
+
+1. Go to **[posit.co/download/rstudio-desktop](https://posit.co/download/rstudio-desktop/)**.
+2. That page actually lists installing R as its own "Step 1" (which you already did above) -- scroll down to **Step 2: Install RStudio**.
+3. Click the download button for the free **RStudio Desktop** version matching your operating system.
+4. Run the installer and, same as before, click through it accepting the defaults.
+
+```{r install-rstudio-quiz, echo=FALSE}
+question("Suppose you skipped installing R and only installed RStudio. What would happen when you tried to open RStudio?",
+  answer("It would work exactly the same -- RStudio doesn't actually need R.", message = "RStudio is only an interface -- it needs an actual R installation underneath it to run any code."),
+  answer("It would either fail to open properly or prompt you that no R installation was found.", correct = TRUE),
+  answer("It would automatically download and install R for you first.", message = "RStudio doesn't install R on its own -- the two are downloaded and installed as separate steps."),
+  allow_retry = TRUE
+)
+```
+
+### Step 3: Open RStudio and do a first check
+
+Open **RStudio** now -- not R by itself; look for the RStudio icon specifically, since installing R doesn't create a separate icon for it, and R itself has no real interface to open.
+
+The first time it launches, RStudio automatically detects the R installation from Step 1 -- you shouldn't need to point it at anything manually. You'll see a window split into a few panes (covered in detail in the next section); for now, find the **Console** pane -- it's the one with a `>` prompt waiting for input.
+
+Click into the Console, type:
+
+```
+2 + 2
+```
+
+and press **Enter**. You should see:
+
+```
+[1] 4
+```
+
+That confirms R and RStudio are both installed and talking to each other correctly.
+
+```{r first-check-quiz, echo=FALSE}
+question("You open RStudio, type 2 + 2 in the Console, and press Enter -- but instead of [1] 4, you get an error like \"R version not found\" or the Console looks broken. What's the most likely explanation?",
+  answer("RStudio is broken and needs to be reinstalled.", message = "RStudio itself is very unlikely to be the problem here -- it's almost always about what it's trying to connect to."),
+  answer("R wasn't fully installed (or installed correctly) in Step 1 -- go back and reinstall R, then reopen RStudio.", correct = TRUE),
+  answer("You need to install a separate \"math package\" before RStudio can do arithmetic.", message = "Basic arithmetic works in R with no extra packages -- this isn't a missing-package problem."),
+  allow_retry = TRUE
+)
+```
+
+## The RStudio panes
+
+When you open RStudio, you'll typically see four panes:
+
+- **Source** (top-left) -- where you write and edit scripts
+- **Console** (bottom-left) -- where code actually runs, one command at a time
+- **Environment / History** (top-right) -- shows the objects you've created and what you've run
+- **Files / Plots / Packages / Help** (bottom-right) -- a multi-purpose pane for browsing files, viewing plots, managing packages, and reading documentation
+
+```{r panes-quiz, echo=FALSE}
+question("If you want to see a plot you just created, which pane would you look at?",
+  answer("Source"),
+  answer("Console"),
+  answer("Environment / History"),
+  answer("Files / Plots / Packages / Help", correct = TRUE),
+  allow_retry = TRUE
+)
+```
+
+## Working directory
+
+Your **working directory** is the folder R considers "home base" for the current session -- it's where R will look for files by default, and where it'll save things unless told otherwise.
+
+The most reliable way to manage this is with an **RStudio Project** (a folder with a `.Rproj` file in it). Opening a project automatically sets the working directory to that project's folder, which avoids a lot of "file not found" headaches later, especially once we start importing data.
+
+```{r wd-quiz, echo=FALSE}
+question("What's the main benefit of using an RStudio Project instead of just opening loose scripts?",
+  answer("It makes your code run faster.", message = "Not related to speed."),
+  answer("It automatically sets your working directory to a consistent, predictable folder.", correct = TRUE),
+  answer("It's required to install packages.", message = "Packages install fine either way."),
+  allow_retry = TRUE
+)
+```
+
+## Wrapping up
+
+### Quick system check
+
+Before moving on, let's confirm everything's connected properly. Replace the placeholder below with your own name, keeping the quotation marks, and click **Submit Answer**.
+
+```{r name-exercise, exercise=TRUE}
+"___"
+```
+
+```{r name-exercise-check}
+grade_this({
+  session <- shiny::getDefaultReactiveDomain()
+  student_id <- if (!is.null(session)) session$userData$student_id else NA
+  result <- evaluate_name_exercise(.result, .stage)
+  log_attempt_and_maybe_open_chat("module1_name_check", student_id, .user_code, result$passed, result$message, "tutor_accordion_1", session)
+  if (result$passed) pass(result$message) else fail(result$message)
+})
+```
+
+```{r name-exercise-error-check}
+grade_this({
+  session <- shiny::getDefaultReactiveDomain()
+  student_id <- if (!is.null(session)) session$userData$student_id else NA
+  result <- evaluate_name_exercise(.result, .stage)
+  log_attempt_and_maybe_open_chat("module1_name_check", student_id, .user_code, result$passed, result$message, "tutor_accordion_1", session)
+  if (result$passed) pass(result$message) else fail(result$message)
+})
+```
+
+Stuck, or want to double check your thinking? The tutor chat below is available any time -- before you submit, after a failed attempt, or even after you've already passed.
+
+```{r, echo=FALSE}
+accordion(
+  id = "tutor_accordion_1",
+  open = FALSE,
+  accordion_panel(
+    title = "Ask the Tutor",
+    chat_ui(
+      "tutor_chat_1",
+      placeholder = "Ask a question about this exercise...",
+      greeting = TUTOR_CHAT_GREETING,
+      allow_attachments = FALSE
+    )
+  )
+)
+```
+
+### Up next
+
+Module 2 introduces actual R code -- installing packages, reading the console, and running provided scripts.
