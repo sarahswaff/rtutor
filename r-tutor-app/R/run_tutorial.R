@@ -4,7 +4,7 @@
 # Usage: Rscript R/run_tutorial.R
 # Then open http://127.0.0.1:7412 in a browser.
 
-MODULE_FILE <- "module_1.Rmd"
+MODULE_FILE <- "module_5.Rmd"
 PROJECT_ROOT <- "C:/Users/sarah/OneDrive/Documents/R_tutor/r-tutor-app"
 
 readRenviron(file.path(PROJECT_ROOT, ".Renviron"))

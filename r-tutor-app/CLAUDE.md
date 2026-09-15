@@ -44,7 +44,9 @@ r-tutor-app/
 ├── tutorials/
 │   ├── module_1.Rmd    -- DONE, tested end-to-end
 │   ├── module_2.Rmd    -- DONE, tested end-to-end
-│   └── module_3.Rmd    -- DONE, tested end-to-end (see "Current status" below)
+│   ├── module_3.Rmd    -- DONE, tested end-to-end
+│   ├── module_4.Rmd    -- DONE, tested end-to-end (see "Current status" below)
+│   └── module_5.Rmd    -- DONE, tested end-to-end (see "Current status" below)
 ├── student_app/         -- not yet built
 └── instructor_dashboard/ -- not yet built
 ```
@@ -77,10 +79,16 @@ r-tutor-app/
 3. **Data** -- hello world, data types, naming conventions, vectors, assignment, basic
    functions/comparisons, data structures, import. DONE (module_3.Rmd).
 4. **Clean up** -- inspect, rename columns, index/subset, pipe, dplyr verbs
-   (filter/select/mutate/arrange/group_by/summarize), handling NAs.
+   (filter/select/mutate/arrange/group_by/summarize), handling NAs. DONE (module_4.Rmd) --
+   built around a synthetic 10-row fish survey data set (`fish_survey`/`fish_clean`, two
+   lakes, three species, deliberately messy column names and real NAs), 7 graded exercises.
 5. **Actual Work** -- ggplot basics, markdown awareness (NOT authoring -- students just need
    to know it exists, it'll likely be provided to them), script save/import, file naming
-   conventions (light touch on version control -- awareness only, not real git usage).
+   conventions (light touch on version control -- awareness only, not real git usage). DONE
+   (module_5.Rmd) -- reuses the same `fish_clean` data from Module 4 for continuity, 4 graded
+   ggplot exercises (scatter, bar from a dplyr summary, histogram, filtered+titled
+   cumulative) plus quiz-only awareness content for everything else, since none of the
+   file-naming/Markdown/version-control content involves writing new code.
 
 A capstone pipeline assessment exists but is explicitly OUT of scope for the tutorial itself.
 
@@ -429,7 +437,7 @@ once in `R/tutor_utils.R`; only each exercise's own `evaluate_<exercise>()` grad
 and each quiz's own choices/feedback text differ per module. `exercises.learning_objective`
 is set for all seven exercise rows in Supabase.
 
-A real back-and-forth tutor conversation has been verified for all three modules (both
+A real back-and-forth tutor conversation has been verified for all five modules (both
 directions confirmed in `chat_logs`) -- responses correctly reference the student's actual
 submission, give guiding next steps without leaking answers, and build on the student's own
 follow-ups, consistent with the system prompt's escalation/non-leaking design. The tutor
@@ -441,16 +449,42 @@ Module 1's "Installing R and RStudio" section is a real guided walkthrough (thre
 steps -- install R, install RStudio, verify via `2 + 2` in the Console -- each with its own
 checkpoint quiz), not a passive fact list.
 
+**Modules 4-5 are built and tested end-to-end** (locally: identity capture, every quiz,
+every exercise's fail/error/pass/Start-Over paths, tutor chat auto-open-on-fail, a real
+tutor conversation confirmed in both directions via `chat_logs`, and `exercise_attempts`
+logging). Two things came up building them that are now established conventions for any
+future module:
+
+- **A module's exercises can't just reference a data object defined in the `setup` chunk --
+  it has to be explicitly placed in `.GlobalEnv`.** `exercise_server()` evaluates submitted
+  code via `eval(parse(text = user_code), envir = new.env())`; that environment's parent
+  chain resolves through wherever `exercise_server()` itself was `source()`'d (which is
+  `.GlobalEnv`, since `source()` defaults to `local = FALSE`), NOT through the `setup`
+  chunk's own local execution environment. Modules 1-3 never hit this because their
+  exercises only ever built self-contained vectors from scratch; Module 4 is the first to
+  need a shared reference data set (`fish_survey`/`fish_clean`), so its `setup` chunk ends
+  with `assign("fish_clean", fish_clean, envir = globalenv())` (and the same for
+  `fish_survey`). Safe to do for static, read-only reference data that's the same for every
+  session. Module 5 recreates its own copy of `fish_clean` the same way (each module is a
+  separate deployment -- no state is shared across modules in production).
+- **`exercise_ui()`/`exercise_server()` gained an opt-in `has_plot_output` argument** (see
+  `R/tutor_utils.R`) for exercises whose result is a `ggplot` object. The normal feedback
+  path (`capture.output(print(result))`) is fine for the vectors/data frames every other
+  module's exercises return, but `print.ggplot()`'s real job is drawing to a graphics
+  device, not producing useful text -- so a plotting exercise needs `has_plot_output = TRUE`
+  (both in the `exercise_ui()` call in the document body and the matching `exercise_server()`
+  call), which adds a `plotOutput()`/`renderPlot()` area instead. Defaults to `FALSE`, so
+  every existing module's calls are completely unaffected -- confirmed via a parse/formals
+  smoke test after the change (a full manual re-test of Modules 1-3 was not run, but the
+  change is purely additive and low-risk).
+
 **Next actions, in order:**
-1. Modules 4-5 follow the same established pattern -- source `R/tutor_utils.R`, call
-   `bs5_theme_dependencies()` + `wire_tutor_chat()` for any exercise,
-   `quiz_question_ui()`/`quiz_question_server()` for quizzes, `exercise_ui()`/
-   `exercise_server()` for graded exercises (NOT `learnr::question()`/`exercise=TRUE`/
-   gradethis -- see the note at the top of "Key conventions" above), write only the
-   exercise-specific `evaluate_<exercise>()` grading function per module, and size the
-   exercise count/complexity per the scaling convention above rather than Module 1/2's
-   original (pre-rewrite) count.
-2. When each new module is ready, add a matching self-contained copy under `deploy/` with
-   its own `manifest.json`, following the Modules 1-3 pattern, and deploy it to Connect
-   Cloud the same way.
+1. Push Modules 4 and 5 to Connect Cloud: self-contained copies already exist under
+   `deploy/module_4/` and `deploy/module_5/` with regenerated `manifest.json` files
+   (via `rsconnect::writeManifest()`), following the Modules 1-3 pattern exactly. Still
+   needed: create the two new content items on connect.posit.cloud and set each one's four
+   `.Renviron` variables in its own dashboard settings (not yet done -- requires the
+   Connect Cloud dashboard).
+2. `R/run_tutorial.R`'s `MODULE_FILE` is currently set to `"module_5.Rmd"` (last module
+   tested locally) -- change it to whichever module you're actively working on.
 3. Instructor dashboard, once there's real attempt/chat data to build it against.

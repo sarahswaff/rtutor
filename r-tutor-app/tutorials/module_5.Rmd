@@ -1,0 +1,516 @@
+---
+title: "Module 5: Actual Work"
+output:
+  learnr::tutorial:
+    progressive: true
+    allow_skip: false
+    theme: !expr bslib::bs_theme(version = 5, bootswatch = "cerulean")
+runtime: shiny_prerendered
+---
+
+```{r setup, include=FALSE}
+library(learnr)
+library(shiny)
+library(DBI)
+library(RPostgres)
+library(bslib)
+library(shinychat)
+library(ellmer)
+library(promises)
+library(dplyr)
+library(ggplot2)
+library(rlang)
+
+# Shared database helper functions (get_con, get_or_create_student,
+# get_exercise_id, log_attempt, log_chat)
+source("../R/db_utils.R")
+# Tutor chat context assembly, start_tutor_chat(), the shared
+# bs5_theme_dependencies()/wire_tutor_chat()/log_attempt_and_maybe_open_chat()
+# wiring, and the quiz_question_ui()/quiz_question_server() and
+# exercise_ui()/exercise_server() helpers used below in place of
+# learnr::question() and exercise=TRUE/gradethis -- see their
+# definitions in R/tutor_utils.R for why. exercise_ui()/exercise_server()
+# gained a has_plot_output argument for this module -- see R/tutor_utils.R
+# for why a ggplot result needs different handling than every other
+# module's plain-value results.
+source("../R/tutor_utils.R")
+
+# --- Practice data ---------------------------------------------------------
+# Same already-cleaned fish survey data from Module 4 (each module is its
+# own self-contained deployment, so it's recreated here rather than shared
+# across modules). See module_4.Rmd for the raw/messy version and the
+# renaming exercise that produces this.
+fish_clean <- data.frame(
+  fish_id   = 1:10,
+  species   = c("Bluegill", "Bluegill", "Largemouth Bass", "Largemouth Bass",
+                "Yellow Perch", "Yellow Perch", "Bluegill", "Largemouth Bass",
+                "Yellow Perch", "Bluegill"),
+  length_mm = c(152, 148, 310, NA, 205, 198, 160, 295, 210, 145),
+  weight_g  = c(45, 42, NA, 610, 98, 95, 50, 580, NA, 40),
+  lake_site = c("North Lake", "North Lake", "South Lake", "South Lake",
+                "North Lake", "South Lake", "North Lake", "South Lake",
+                "North Lake", "South Lake"),
+  stringsAsFactors = FALSE
+)
+
+# exercise_server() evaluates submitted code via eval(parse(text = user_code),
+# envir = new.env()) -- see the identical note in module_4.Rmd's setup chunk
+# for why this needs to be explicitly placed in .GlobalEnv rather than just
+# assigned normally.
+assign("fish_clean", fish_clean, envir = globalenv())
+
+# Grading logic for each exercise. A ggplot object's mapping (aes()) is
+# stored as quosures -- rlang::as_label() turns e.g. aes(x = length_mm)'s
+# stored mapping back into the plain string "length_mm" for comparison.
+# log_attempt_and_maybe_open_chat() and wire_tutor_chat() themselves are
+# shared across modules -- see R/tutor_utils.R.
+
+mapping_label <- function(mapping, aesthetic) {
+  if (is.null(mapping[[aesthetic]])) return(NA_character_)
+  rlang::as_label(mapping[[aesthetic]])
+}
+
+evaluate_scatter_exercise <- function(user_code, result, stage) {
+  uses_geom_point <- grepl("geom_point\\s*\\(", user_code)
+  is_ggplot <- inherits(result, "ggplot")
+  has_point_layer <- is_ggplot && any(vapply(result$layers, function(l) inherits(l$geom, "GeomPoint"), logical(1)))
+  x_ok <- is_ggplot && identical(mapping_label(result$mapping, "x"), "length_mm")
+  y_ok <- is_ggplot && identical(mapping_label(result$mapping, "y"), "weight_g")
+
+  passed <- uses_geom_point && is_ggplot && has_point_layer && x_ok && y_ok
+
+  feedback_message <- if (passed) {
+    "That's a scatter plot of length vs. weight -- exactly right."
+  } else if (identical(stage, "error_check")) {
+    "That code doesn't run as-is -- check that aes()'s arguments and geom_point() are complete, valid R."
+  } else if (!is_ggplot) {
+    "This should produce a ggplot object -- make sure ggplot(fish_clean, aes(...)) is still the start of the expression."
+  } else if (!has_point_layer) {
+    "This needs a geom_point() layer to actually draw the scatter plot."
+  } else if (!x_ok) {
+    "The x-axis isn't mapped to length_mm yet -- check aes()'s x argument."
+  } else {
+    "Close -- the y-axis isn't mapped to weight_g yet, check aes()'s y argument."
+  }
+
+  list(passed = passed, message = feedback_message)
+}
+
+evaluate_bar_exercise <- function(user_code, result, stage) {
+  uses_group_by <- grepl("group_by\\s*\\(", user_code)
+  uses_geom_col <- grepl("geom_col\\s*\\(", user_code)
+  is_ggplot <- inherits(result, "ggplot")
+  has_col_layer <- is_ggplot && any(vapply(result$layers, function(l) inherits(l$geom, "GeomCol"), logical(1)))
+  right_groups <- is_ggplot && is.data.frame(result$data) && nrow(result$data) == 3
+  x_ok <- is_ggplot && identical(mapping_label(result$mapping, "x"), "species")
+  y_ok <- is_ggplot && identical(mapping_label(result$mapping, "y"), "mean_weight")
+
+  passed <- uses_group_by && uses_geom_col && is_ggplot && has_col_layer && right_groups && x_ok && y_ok
+
+  feedback_message <- if (passed) {
+    "One bar per species, showing each one's mean weight -- exactly right."
+  } else if (identical(stage, "error_check")) {
+    "That code doesn't run as-is -- work through each step of the pipeline, same as Module 4."
+  } else if (!uses_group_by || !right_groups) {
+    "Check the group_by() step -- there are 3 species in this data, and something else is producing a different number of bars."
+  } else if (!uses_geom_col || !has_col_layer) {
+    "This needs a geom_col() layer to draw the bars."
+  } else if (!x_ok) {
+    "The x-axis isn't mapped to species yet -- check aes()'s x argument."
+  } else {
+    "Close -- the y-axis isn't mapped to mean_weight yet, check aes()'s y argument."
+  }
+
+  list(passed = passed, message = feedback_message)
+}
+
+evaluate_histogram_exercise <- function(user_code, result, stage) {
+  uses_geom_histogram <- grepl("geom_histogram\\s*\\(", user_code)
+  is_ggplot <- inherits(result, "ggplot")
+  has_hist_layer <- is_ggplot && any(vapply(result$layers, function(l) inherits(l$geom, "GeomBar") || inherits(l$geom, "GeomHistogram") || "GeomBar" %in% class(l$geom), logical(1)))
+  x_ok <- is_ggplot && identical(mapping_label(result$mapping, "x"), "length_mm")
+
+  passed <- uses_geom_histogram && is_ggplot && has_hist_layer && x_ok
+
+  feedback_message <- if (passed) {
+    "That's a histogram of length_mm -- exactly right."
+  } else if (identical(stage, "error_check")) {
+    "That code doesn't run as-is -- check that aes() and geom_histogram() are complete, valid R."
+  } else if (!is_ggplot) {
+    "This should produce a ggplot object -- make sure ggplot(fish_clean, aes(...)) is still the start of the expression."
+  } else if (!has_hist_layer) {
+    "This needs a geom_histogram() layer to actually draw the histogram."
+  } else {
+    "Close -- the x-axis isn't mapped to length_mm yet, check aes()'s x argument."
+  }
+
+  list(passed = passed, message = feedback_message)
+}
+
+evaluate_cumulative_plot_exercise <- function(user_code, result, stage) {
+  uses_filter <- grepl("filter\\s*\\(", user_code)
+  uses_geom_point <- grepl("geom_point\\s*\\(", user_code)
+  uses_labs <- grepl("labs\\s*\\(", user_code)
+  is_ggplot <- inherits(result, "ggplot")
+  has_point_layer <- is_ggplot && any(vapply(result$layers, function(l) inherits(l$geom, "GeomPoint"), logical(1)))
+  right_data <- is_ggplot && is.data.frame(result$data) && nrow(result$data) == 4 &&
+    "species" %in% names(result$data) && all(result$data$species == "Bluegill")
+  has_title <- is_ggplot && is.character(result$labels$title) && nzchar(trimws(result$labels$title))
+
+  passed <- uses_filter && uses_geom_point && uses_labs && is_ggplot && has_point_layer && right_data && has_title
+
+  feedback_message <- if (passed) {
+    "That's the full pipeline -- filtered to just Bluegill, plotted, and titled."
+  } else if (identical(stage, "error_check")) {
+    "That code doesn't run as-is -- work through it one step at a time, same as you've done in earlier modules."
+  } else if (!uses_filter || !right_data) {
+    "Check the filter() step -- this plot should only include the 4 Bluegill rows."
+  } else if (!uses_geom_point || !has_point_layer) {
+    "This still needs a geom_point() layer to draw the scatter plot."
+  } else if (!uses_labs || !has_title) {
+    "The plot looks right, but it still needs a title -- add labs(title = \"...\") with any title you like."
+  } else {
+    "Close -- double check each step of the pipeline."
+  }
+
+  list(passed = passed, message = feedback_message)
+}
+```
+
+```{r, context="server"}
+# --- Identity capture -------------------------------------------------
+# Same pattern as module_1.Rmd/module_2.Rmd/module_3.Rmd/module_4.Rmd: ask
+# for a name on start, store the resulting student_id on session$userData
+# so exercise check code (which runs semi-isolated from this chunk) can
+# reach it via shiny::getDefaultReactiveDomain().
+
+showModal(modalDialog(
+  title = "Welcome back!",
+  "Please enter your name to begin this tutorial.",
+  textInput("student_name", label = NULL, placeholder = "Your name"),
+  footer = actionButton("submit_name", "Start Tutorial"),
+  easyClose = FALSE
+))
+
+observeEvent(input$submit_name, {
+  req(input$student_name)
+  tryCatch({
+    con <- get_con()
+    sid <- get_or_create_student(con, trimws(input$student_name))
+    dbDisconnect(con)
+
+    session$userData$student_id <- sid
+    removeModal()
+  }, error = function(e) {
+    showModal(modalDialog(
+      title = "Couldn't connect",
+      paste("There was a problem saving your name (database error):", conditionMessage(e)),
+      footer = actionButton("submit_name", "Try again"),
+      easyClose = FALSE
+    ))
+  })
+})
+```
+
+```{r, context="server"}
+# --- Tutor chat wiring --------------------------------------------------
+# Each graded exercise gets its own always-available (collapsed by
+# default) tutor chat panel. See wire_tutor_chat() in R/tutor_utils.R for
+# the full mechanism (fresh client per open, both directions logged).
+
+wire_tutor_chat("module5_scatter", "tutor_chat_1", "tutor_accordion_1", "Ask the Tutor", input, output, session)
+wire_tutor_chat("module5_bar", "tutor_chat_2", "tutor_accordion_2", "Ask the Tutor", input, output, session)
+wire_tutor_chat("module5_histogram", "tutor_chat_3", "tutor_accordion_3", "Ask the Tutor", input, output, session)
+wire_tutor_chat("module5_cumulative", "tutor_chat_4", "tutor_accordion_4", "Ask the Tutor", input, output, session)
+```
+
+```{r, context="server"}
+# --- Fix for quiz/exercise feedback outputs getting stuck "recalculating"
+# if bound while their topic is hidden -- see unstick_hidden_outputs() in
+# R/tutor_utils.R.
+unstick_hidden_outputs(output, session)
+```
+
+```{r, context="server"}
+# --- Quiz question wiring ------------------------------------------------
+# See quiz_question_ui()/quiz_question_server() in R/tutor_utils.R.
+
+quiz_question_server(input, output, session, "ggplot_grammar_quiz", list(
+  correct = list(correct = TRUE, message = "Correct!"),
+  wrong_speed = list(correct = FALSE, message = "aes() doesn't affect how fast the code runs -- it's purely about what's shown and how."),
+  wrong_load = list(correct = FALSE, message = "aes() doesn't load or import anything -- that's a separate step.")
+))
+
+quiz_question_server(input, output, session, "markdown_quiz", list(
+  correct = list(correct = TRUE, message = "Correct!"),
+  wrong_speed = list(correct = FALSE, message = "R Markdown doesn't make code run faster -- it's about presentation, not performance."),
+  wrong_password = list(correct = FALSE, message = "R Markdown files aren't for storing credentials -- that's what .Renviron (and never committing it to git) is for.")
+))
+
+quiz_question_server(input, output, session, "scripts_quiz", list(
+  correct = list(correct = TRUE, message = "Correct!"),
+  wrong_required = list(correct = FALSE, message = "R scripts run from anywhere -- the issue with the Desktop is organization, not a hard requirement."),
+  wrong_speed = list(correct = FALSE, message = "Where a script is saved doesn't affect how fast it runs.")
+))
+
+quiz_question_server(input, output, session, "naming_files_quiz", list(
+  correct = list(correct = TRUE, message = "Correct!"),
+  wrong_final = list(correct = FALSE, message = "Names like that (with \"final\", spaces, and version numbers in parentheses) are exactly what to avoid -- they don't say what the file actually does, and stack up confusingly over time."),
+  wrong_vague = list(correct = FALSE, message = "A name like that doesn't describe what the file does at all -- six months from now, you (or a teammate) would have no way to tell.")
+))
+
+quiz_question_server(input, output, session, "version_control_quiz", list(
+  correct = list(correct = TRUE, message = "Correct!"),
+  wrong_autofix = list(correct = FALSE, message = "Git doesn't fix bugs for you -- it just keeps a history of every change, bugs included."),
+  wrong_standalone = list(correct = FALSE, message = "Git is unrelated to whether RStudio is installed -- it's about tracking change history, not packaging software.")
+))
+```
+
+```{r, context="server"}
+# --- Exercise wiring -------------------------------------------------------
+# See exercise_ui()/exercise_server() in R/tutor_utils.R. has_plot_output =
+# TRUE here so a ggplot result is actually rendered, not printed as text.
+
+exercise_server(
+  input, output, session, "scatter_exercise", "module5_scatter", "tutor_accordion_1",
+  starting_code = "ggplot(fish_clean, aes(x = FIXME, y = FIXME)) +\n  geom_point()",
+  evaluate_fn = function(user_code, result, envir, stage) evaluate_scatter_exercise(user_code, result, stage),
+  has_plot_output = TRUE
+)
+
+exercise_server(
+  input, output, session, "bar_exercise", "module5_bar", "tutor_accordion_2",
+  starting_code = "fish_clean |>\n  group_by(FIXME) |>\n  summarize(mean_weight = mean(weight_g, na.rm = TRUE)) |>\n  ggplot(aes(x = FIXME, y = FIXME)) +\n  geom_col()",
+  evaluate_fn = function(user_code, result, envir, stage) evaluate_bar_exercise(user_code, result, stage),
+  has_plot_output = TRUE
+)
+
+exercise_server(
+  input, output, session, "histogram_exercise", "module5_histogram", "tutor_accordion_3",
+  starting_code = "ggplot(fish_clean, aes(x = FIXME)) +\n  geom_histogram(bins = 8)",
+  evaluate_fn = function(user_code, result, envir, stage) evaluate_histogram_exercise(user_code, result, stage),
+  has_plot_output = TRUE
+)
+
+exercise_server(
+  input, output, session, "cumulative_plot_exercise", "module5_cumulative", "tutor_accordion_4",
+  starting_code = "fish_clean |>\n  filter(FIXME) |>\n  ggplot(aes(x = length_mm, y = weight_g)) +\n  geom_point() +\n  labs(title = FIXME)",
+  evaluate_fn = function(user_code, result, envir, stage) evaluate_cumulative_plot_exercise(user_code, result, stage),
+  has_plot_output = TRUE
+)
+```
+
+## Welcome back
+
+```{r, echo=FALSE}
+bs5_theme_dependencies()
+```
+
+Module 4 got `fish_clean` -- the same fish survey data you'll use again here -- inspected, cleaned, and summarized. This module is where you actually *do something* with it: turn it into plots with `ggplot2`. Along the way, you'll also pick up a handful of habits (naming files, organizing scripts, recognizing R Markdown, and what version control is for) that matter for real work beyond this course, even though none of them involve writing new code.
+
+## Basic plots with ggplot2
+
+Every `ggplot2` plot follows the same basic grammar:
+
+- **`ggplot(data, aes(...))`** -- start a plot, and tell it which columns to use with `aes()` (short for "aesthetic mapping") -- which column goes on the x-axis, which on the y-axis, and so on
+- **`+ geom_...()`** -- add a "geometry" layer that actually draws something: `geom_point()` for a scatter plot, `geom_col()` for bars, `geom_histogram()` for a distribution
+
+These pieces are combined with `+`, not the pipe:
+
+```{r ggplot-demo, echo=TRUE, fig.height=3}
+ggplot(fish_clean, aes(x = species, y = length_mm)) +
+  geom_point()
+```
+
+```{r, echo=FALSE}
+quiz_question_ui("ggplot_grammar_quiz", "What does aes() tell ggplot to do?", c(
+  "Map data columns to visual properties like x, y, or color" = "correct",
+  "Run the plotting code faster" = "wrong_speed",
+  "Load the ggplot2 package" = "wrong_load"
+))
+```
+
+### Practice: scatter plot
+
+Below, create a scatter plot of `fish_clean` with `length_mm` on the x-axis and `weight_g` on the y-axis, replacing both `FIXME`s.
+
+```{r, echo=FALSE}
+exercise_ui("scatter_exercise", "ggplot(fish_clean, aes(x = FIXME, y = FIXME)) +\n  geom_point()", has_plot_output = TRUE)
+```
+
+Stuck, or want to double check your thinking? The tutor chat below is available any time -- before you submit, after a failed attempt, or even after you've already passed.
+
+```{r, echo=FALSE}
+accordion(
+  id = "tutor_accordion_1",
+  open = FALSE,
+  accordion_panel(
+    title = "Ask the Tutor",
+    chat_ui(
+      "tutor_chat_1",
+      placeholder = "Ask a question about this exercise...",
+      greeting = TUTOR_CHAT_GREETING,
+      allow_attachments = FALSE
+    )
+  )
+)
+```
+
+## Bar charts from summarized data
+
+A bar chart usually plots *summarized* data, not raw rows -- which is exactly what Module 4's `group_by()` + `summarize()` produce. You can pipe a summary straight into `ggplot()`:
+
+```{r bar-demo, echo=TRUE, fig.height=3}
+fish_clean |>
+  group_by(lake_site) |>
+  summarize(mean_length = mean(length_mm, na.rm = TRUE)) |>
+  ggplot(aes(x = lake_site, y = mean_length)) +
+  geom_col()
+```
+
+### Practice: mean weight per species
+
+Below, group `fish_clean` by `species`, summarize each group's mean `weight_g` into `mean_weight` (already written for you), then plot the result as a bar chart with `species` on the x-axis and `mean_weight` on the y-axis. Replace all three `FIXME`s.
+
+```{r, echo=FALSE}
+exercise_ui("bar_exercise", "fish_clean |>\n  group_by(FIXME) |>\n  summarize(mean_weight = mean(weight_g, na.rm = TRUE)) |>\n  ggplot(aes(x = FIXME, y = FIXME)) +\n  geom_col()", has_plot_output = TRUE)
+```
+
+Stuck, or want to double check your thinking? The tutor chat below is available any time -- before you submit, after a failed attempt, or even after you've already passed.
+
+```{r, echo=FALSE}
+accordion(
+  id = "tutor_accordion_2",
+  open = FALSE,
+  accordion_panel(
+    title = "Ask the Tutor",
+    chat_ui(
+      "tutor_chat_2",
+      placeholder = "Ask a question about this exercise...",
+      greeting = TUTOR_CHAT_GREETING,
+      allow_attachments = FALSE
+    )
+  )
+)
+```
+
+## Histograms
+
+A histogram shows the *distribution* of a single numeric column -- how its values are spread out -- by grouping values into bins and counting how many fall in each one:
+
+```{r histogram-demo, echo=TRUE, fig.height=3}
+ggplot(fish_clean, aes(x = weight_g)) +
+  geom_histogram(bins = 6)
+```
+
+### Practice: histogram of length
+
+Below, create a histogram of `fish_clean`'s `length_mm` column, replacing `FIXME`.
+
+```{r, echo=FALSE}
+exercise_ui("histogram_exercise", "ggplot(fish_clean, aes(x = FIXME)) +\n  geom_histogram(bins = 8)", has_plot_output = TRUE)
+```
+
+Stuck, or want to double check your thinking? The tutor chat below is available any time -- before you submit, after a failed attempt, or even after you've already passed.
+
+```{r, echo=FALSE}
+accordion(
+  id = "tutor_accordion_3",
+  open = FALSE,
+  accordion_panel(
+    title = "Ask the Tutor",
+    chat_ui(
+      "tutor_chat_3",
+      placeholder = "Ask a question about this exercise...",
+      greeting = TUTOR_CHAT_GREETING,
+      allow_attachments = FALSE
+    )
+  )
+)
+```
+
+## Markdown awareness
+
+You've been reading formatted text like this the whole course -- headings, bullet points, bold text -- inside what's actually an **R Markdown** (`.Rmd`) document (this tutorial is one). R Markdown combines regular text with R code and that code's output, all in one file that renders into a finished report.
+
+You won't be asked to author R Markdown documents in this course -- just recognize what one is and what it's for, since scripts and reports you're handed later on may well be written as one.
+
+```{r, echo=FALSE}
+quiz_question_ui("markdown_quiz", "What is an R Markdown (.Rmd) file mainly used for?", c(
+  "Combining code, its output, and written text into one formatted document or report" = "correct",
+  "Running R code faster than a normal script" = "wrong_speed",
+  "Storing a database connection's password" = "wrong_password"
+))
+```
+
+## Saving and organizing scripts
+
+A plain R script (a `.R` file) is just your code, without any of R Markdown's surrounding text. Where you save one matters more than it might seem: keeping scripts inside your project's folder (not scattered on the Desktop or in Downloads) keeps everything a project needs in one place, so file paths -- like the working directory concepts from Module 1 -- keep working, and nothing gets lost or orphaned.
+
+```{r, echo=FALSE}
+quiz_question_ui("scripts_quiz", "Why is it better to save your R scripts inside your project folder rather than on the Desktop?", c(
+  "Keeps all the files a project needs together, so paths (like working directory) still work and nothing gets lost" = "correct",
+  "R scripts only run correctly if saved on the Desktop" = "wrong_required",
+  "It makes the script run faster" = "wrong_speed"
+))
+```
+
+## File naming conventions
+
+A good file name describes what the file actually does, using lowercase words separated by `_` or `-`, with no spaces or special characters -- similar to this course's `snake_case` variable naming from Module 3. Avoid vague names (`asdf.R`) and especially avoid manual "versioning" in the name itself (`final_v2_FINAL.R`) -- that gets confusing fast, and it's exactly the problem real version control (next section) solves properly.
+
+```{r, echo=FALSE}
+quiz_question_ui("naming_files_quiz", "Which of these is the best file name for a script that cleans survey data?", c(
+  "clean_survey_data.R" = "correct",
+  "Final FINAL script (2).R" = "wrong_final",
+  "asdf.R" = "wrong_vague"
+))
+```
+
+## Version control awareness
+
+**Version control** (most commonly **Git**, often paired with **GitHub** for hosting) tracks every change made to a project's files over time -- who changed what, when, and why -- so you can see a file's full history and undo a mistake instead of relying on file names like `final_v2.R` to keep track manually. This course doesn't have you use Git hands-on -- just know that it exists and roughly what it's for, since it's standard in real collaborative work.
+
+```{r, echo=FALSE}
+quiz_question_ui("version_control_quiz", "What is the main purpose of a version control system like Git?", c(
+  "Tracking changes to files over time so you can see history and undo mistakes" = "correct",
+  "Automatically fixing bugs in your code" = "wrong_autofix",
+  "Making your R scripts run without RStudio installed" = "wrong_standalone"
+))
+```
+
+## Putting it together
+
+This last exercise combines a data-cleaning step from Module 4 with this module's plotting skills, plus one more small addition: giving a plot a title with `labs(title = "...")`.
+
+### Practice: filtered scatter plot with a title
+
+Below, starting from `fish_clean`: filter down to just the `"Bluegill"` rows, then create a scatter plot of `length_mm` vs. `weight_g`, and give it any title you like using `labs()`. Replace all three `FIXME`s (the third can be any text you want, in quotes).
+
+```{r, echo=FALSE}
+exercise_ui("cumulative_plot_exercise", "fish_clean |>\n  filter(FIXME) |>\n  ggplot(aes(x = length_mm, y = weight_g)) +\n  geom_point() +\n  labs(title = FIXME)", has_plot_output = TRUE)
+```
+
+Stuck, or want to double check your thinking? The tutor chat below is available any time -- before you submit, after a failed attempt, or even after you've already passed.
+
+```{r, echo=FALSE}
+accordion(
+  id = "tutor_accordion_4",
+  open = FALSE,
+  accordion_panel(
+    title = "Ask the Tutor",
+    chat_ui(
+      "tutor_chat_4",
+      placeholder = "Ask a question about this exercise...",
+      greeting = TUTOR_CHAT_GREETING,
+      allow_attachments = FALSE
+    )
+  )
+)
+```
+
+## Wrapping up
+
+That's the full course: from installing R and RStudio, through running and reading code, working with data, cleaning it up with dplyr, and now actually producing plots from it with ggplot2 -- plus the surrounding habits (script organization, file naming, R Markdown and version control awareness) that carry into real work beyond this tutorial.
+
+From here, you're ready to work with the scripts, data, and instructions you'll be given in the rest of this course -- not by memorizing every function, but by recognizing what's going on and knowing how to ask for help when something doesn't make sense.

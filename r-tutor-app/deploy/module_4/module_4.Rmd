@@ -1,0 +1,724 @@
+---
+title: "Module 4: Clean Up"
+output:
+  learnr::tutorial:
+    progressive: true
+    allow_skip: false
+    theme: !expr bslib::bs_theme(version = 5, bootswatch = "cerulean")
+runtime: shiny_prerendered
+---
+
+```{r setup, include=FALSE}
+library(learnr)
+library(shiny)
+library(DBI)
+library(RPostgres)
+library(bslib)
+library(shinychat)
+library(ellmer)
+library(promises)
+library(dplyr)
+
+# Shared database helper functions (get_con, get_or_create_student,
+# get_exercise_id, log_attempt, log_chat)
+source("R/db_utils.R")
+# Tutor chat context assembly, start_tutor_chat(), the shared
+# bs5_theme_dependencies()/wire_tutor_chat()/log_attempt_and_maybe_open_chat()
+# wiring, and the quiz_question_ui()/quiz_question_server() and
+# exercise_ui()/exercise_server() helpers used below in place of
+# learnr::question() and exercise=TRUE/gradethis -- see their
+# definitions in R/tutor_utils.R for why.
+source("R/tutor_utils.R")
+
+# --- Practice data ---------------------------------------------------------
+# A small, intentionally messy fish survey data set. Column names use the
+# dot-separated, mixed-case style read.csv()/Excel exports commonly produce
+# -- exactly what "Renaming columns" below has students fix. Two columns
+# (Length.mm, Weight.g) include real NAs so later topics (NA handling,
+# na.rm) have something genuine to work with, not a contrived edge case.
+fish_survey <- data.frame(
+  Fish.ID      = 1:10,
+  Species.Name = c("Bluegill", "Bluegill", "Largemouth Bass", "Largemouth Bass",
+                    "Yellow Perch", "Yellow Perch", "Bluegill", "Largemouth Bass",
+                    "Yellow Perch", "Bluegill"),
+  Length.mm    = c(152, 148, 310, NA, 205, 198, 160, 295, 210, 145),
+  Weight.g     = c(45, 42, NA, 610, 98, 95, 50, 580, NA, 40),
+  Lake.Site    = c("North Lake", "North Lake", "South Lake", "South Lake",
+                    "North Lake", "South Lake", "North Lake", "South Lake",
+                    "North Lake", "South Lake"),
+  stringsAsFactors = FALSE
+)
+
+# Already-renamed version, used by every exercise AFTER the renaming one --
+# so later exercises don't depend on a student having gotten renaming right.
+fish_clean <- fish_survey
+names(fish_clean) <- c("fish_id", "species", "length_mm", "weight_g", "lake_site")
+
+# exercise_server() (R/tutor_utils.R) evaluates submitted code via
+# eval(parse(text = user_code), envir = new.env()) -- new.env()'s parent
+# chain resolves through wherever exercise_server() itself was source()'d
+# (source()'s default local = FALSE means that's .GlobalEnv), NOT through
+# this setup chunk's own local execution environment. Modules 1-3 never hit
+# this because their exercises only ever built self-contained vectors from
+# scratch -- this is the first module where exercise code needs to see a
+# pre-existing shared object, so it needs to be explicitly placed in
+# .GlobalEnv (safe here: both are static, read-only reference data, same
+# for every session, set once when the R process starts).
+assign("fish_survey", fish_survey, envir = globalenv())
+assign("fish_clean", fish_clean, envir = globalenv())
+
+# Grading logic for each exercise. log_attempt_and_maybe_open_chat() and
+# wire_tutor_chat() themselves are shared across modules -- see
+# R/tutor_utils.R.
+
+evaluate_rename_exercise <- function(user_code, result, envir, stage) {
+  expected_names <- c("fish_id", "species", "length_mm", "weight_g", "lake_site")
+  has_fish_clean <- !is.null(envir) && exists("fish_clean", envir = envir, inherits = FALSE) &&
+    is.data.frame(get("fish_clean", envir = envir))
+  correct_result <- is.character(result) && identical(result, expected_names)
+
+  passed <- has_fish_clean && correct_result
+
+  feedback_message <- if (passed) {
+    "All five columns are renamed correctly, in order -- fish_clean is ready to work with."
+  } else if (identical(stage, "error_check")) {
+    "That code doesn't run as-is -- check that every rename() argument has the form new_name = OldName, separated by commas."
+  } else if (!has_fish_clean) {
+    "fish_clean doesn't exist yet -- make sure the first line assigns the renamed result to fish_clean."
+  } else {
+    "fish_clean exists, but the column names aren't all correct yet -- check names(fish_clean) against fish_id, species, length_mm, weight_g, lake_site, in that order."
+  }
+
+  list(passed = passed, message = feedback_message)
+}
+
+evaluate_indexing_exercise <- function(user_code, result, stage) {
+  uses_bracket <- grepl("\\[", user_code)
+  correct_result <- is.data.frame(result) && nrow(result) == 5 && all(result$lake_site == "North Lake")
+
+  passed <- uses_bracket && correct_result
+
+  feedback_message <- if (passed) {
+    "That's it -- 5 rows, all from North Lake."
+  } else if (identical(stage, "error_check")) {
+    "That code doesn't run as-is -- check the comma inside the brackets (rows go before it, columns after -- leaving columns blank keeps them all)."
+  } else if (!uses_bracket) {
+    "Use square-bracket indexing here (fish_clean[ ... , ]), not a dplyr verb -- that's the point of this exercise."
+  } else if (is.data.frame(result) && nrow(result) != 5) {
+    "That ran, but it isn't returning exactly the 5 North Lake rows yet -- double check the comparison inside the brackets."
+  } else {
+    "Check that you're comparing lake_site to exactly \"North Lake\" (spelling and capitalization matter) before the comma."
+  }
+
+  list(passed = passed, message = feedback_message)
+}
+
+evaluate_filter_select_exercise <- function(user_code, result, stage) {
+  uses_filter <- grepl("filter\\s*\\(", user_code)
+  uses_select <- grepl("select\\s*\\(", user_code)
+  correct_result <- is.data.frame(result) &&
+    identical(names(result), c("species", "length_mm")) &&
+    nrow(result) == 4 &&
+    all(result$species == "Bluegill")
+
+  passed <- uses_filter && uses_select && correct_result
+
+  feedback_message <- if (passed) {
+    "Right -- 4 Bluegill rows, with just species and length_mm kept."
+  } else if (identical(stage, "error_check")) {
+    "That code doesn't run as-is -- check the pipe (|>) connects each step, and filter()'s condition uses ==, not =."
+  } else if (!uses_filter) {
+    "This still needs a filter() step to keep only the Bluegill rows."
+  } else if (!uses_select) {
+    "This still needs a select() step to keep only species and length_mm."
+  } else if (is.data.frame(result) && nrow(result) != 4) {
+    "filter() and select() are both there, but the row count isn't right yet -- double check the species name inside filter()."
+  } else {
+    "filter() and select() both ran, but the columns kept aren't exactly species and length_mm -- check select()'s arguments."
+  }
+
+  list(passed = passed, message = feedback_message)
+}
+
+evaluate_mutate_arrange_exercise <- function(user_code, result, stage) {
+  uses_mutate <- grepl("mutate\\s*\\(", user_code)
+  uses_arrange <- grepl("arrange\\s*\\(", user_code)
+  has_weight_kg <- is.data.frame(result) && "weight_kg" %in% names(result)
+  correct_kg <- has_weight_kg && isTRUE(all.equal(result$weight_kg, result$weight_g / 1000))
+  correct_order <- is.data.frame(result) && nrow(result) > 0 && isTRUE(result$length_mm[1] == 310)
+
+  passed <- uses_mutate && uses_arrange && correct_kg && correct_order
+
+  feedback_message <- if (passed) {
+    "weight_kg is calculated correctly, and the rows are sorted with the longest fish first."
+  } else if (identical(stage, "error_check")) {
+    "That code doesn't run as-is -- check both mutate()'s and arrange()'s arguments are complete, valid R expressions."
+  } else if (!uses_mutate || !has_weight_kg) {
+    "mutate() should add a new weight_kg column, equal to weight_g divided by 1000."
+  } else if (!correct_kg) {
+    "weight_kg exists, but its values aren't weight_g / 1000 yet -- check the formula inside mutate()."
+  } else if (!uses_arrange || !correct_order) {
+    "weight_kg looks right, but the rows aren't sorted longest-to-shortest yet -- check that arrange() is using desc() on length_mm."
+  } else {
+    "Almost there -- double check both the mutate() and arrange() steps."
+  }
+
+  list(passed = passed, message = feedback_message)
+}
+
+evaluate_group_summarize_exercise <- function(user_code, result, stage) {
+  uses_group_by <- grepl("group_by\\s*\\(", user_code)
+  uses_summarize <- grepl("summari[sz]e\\s*\\(", user_code)
+  has_col <- is.data.frame(result) && "mean_length" %in% names(result)
+  right_shape <- is.data.frame(result) && nrow(result) == 3
+  no_na <- has_col && right_shape && !any(is.na(result$mean_length))
+
+  passed <- uses_group_by && uses_summarize && has_col && right_shape && no_na
+
+  feedback_message <- if (passed) {
+    "Three species, each with a clean (non-NA) average length -- exactly right."
+  } else if (identical(stage, "error_check")) {
+    "That code doesn't run as-is -- check group_by()'s and summarize()'s arguments are complete."
+  } else if (!uses_group_by) {
+    "This needs a group_by() step, grouping by species."
+  } else if (!has_col) {
+    "summarize() should create a column named exactly mean_length."
+  } else if (!right_shape) {
+    "Check that you're grouping by species -- there are 3 species in this data, and something else is producing a different number of groups."
+  } else if (!no_na) {
+    "mean_length is coming out NA for at least one species -- length_mm has a missing value, so mean() needs na.rm = TRUE."
+  } else {
+    "Close -- double check both steps."
+  }
+
+  list(passed = passed, message = feedback_message)
+}
+
+evaluate_na_handling_exercise <- function(user_code, result, stage) {
+  uses_filter <- grepl("filter\\s*\\(", user_code)
+  uses_is_na <- grepl("is\\.na\\s*\\(", user_code)
+  has_col <- is.data.frame(result) && "avg_weight" %in% names(result)
+  correct_result <- has_col && !is.na(result$avg_weight[1]) && isTRUE(all.equal(result$avg_weight[1], 195))
+
+  passed <- uses_filter && uses_is_na && correct_result
+
+  feedback_message <- if (passed) {
+    "195 -- exactly right, and the missing rows never made it into the average."
+  } else if (identical(stage, "error_check")) {
+    "That code doesn't run as-is -- check that ! and is.na(...) are written correctly inside filter()."
+  } else if (!uses_filter || !uses_is_na) {
+    "filter() should keep only the rows where weight_g is NOT missing -- use is.na() with ! in front of it."
+  } else if (has_col && is.na(result$avg_weight[1])) {
+    "avg_weight is still coming out NA -- the missing rows aren't being filtered out yet."
+  } else {
+    "That's filtering something, but avg_weight isn't 195 yet -- double check the condition inside filter()."
+  }
+
+  list(passed = passed, message = feedback_message)
+}
+
+evaluate_cumulative_exercise <- function(user_code, result, stage) {
+  uses_filter <- grepl("filter\\s*\\(", user_code)
+  uses_group_by <- grepl("group_by\\s*\\(", user_code)
+  uses_arrange <- grepl("arrange\\s*\\(", user_code)
+  right_shape <- is.data.frame(result) && nrow(result) == 2 && "avg_length" %in% names(result)
+  no_na <- right_shape && !any(is.na(result$avg_length))
+  right_order <- right_shape && identical(as.character(result$lake_site[1]), "South Lake")
+
+  passed <- uses_filter && uses_group_by && uses_arrange && right_shape && no_na && right_order
+
+  feedback_message <- if (passed) {
+    "That's the full pipeline -- missing lengths filtered out, averaged per lake, and sorted with the higher average first (South Lake)."
+  } else if (identical(stage, "error_check")) {
+    "That code doesn't run as-is -- work through it one pipe step at a time, same as you've done in earlier modules."
+  } else if (!uses_filter) {
+    "Start with a filter() step that removes rows where length_mm is missing."
+  } else if (!uses_group_by) {
+    "This needs a group_by() step, grouping by lake_site."
+  } else if (!right_shape) {
+    "Check that summarize() is creating a column named exactly avg_length, and that group_by(lake_site) is producing 2 groups."
+  } else if (!no_na) {
+    "avg_length is coming out NA for at least one lake -- make sure the filter() step (removing missing length_mm rows) comes before the average is calculated."
+  } else if (!uses_arrange || !right_order) {
+    "The averages look right, but they're not sorted highest-to-lowest yet -- check that arrange() is using desc() on avg_length."
+  } else {
+    "Close -- double check each step of the pipeline."
+  }
+
+  list(passed = passed, message = feedback_message)
+}
+```
+
+```{r, context="server"}
+# --- Identity capture -------------------------------------------------
+# Same pattern as module_1.Rmd/module_2.Rmd/module_3.Rmd: ask for a name on
+# start, store the resulting student_id on session$userData so exercise
+# check code (which runs semi-isolated from this chunk) can reach it via
+# shiny::getDefaultReactiveDomain().
+
+showModal(modalDialog(
+  title = "Welcome back!",
+  "Please enter your name to begin this tutorial.",
+  textInput("student_name", label = NULL, placeholder = "Your name"),
+  footer = actionButton("submit_name", "Start Tutorial"),
+  easyClose = FALSE
+))
+
+observeEvent(input$submit_name, {
+  req(input$student_name)
+  tryCatch({
+    con <- get_con()
+    sid <- get_or_create_student(con, trimws(input$student_name))
+    dbDisconnect(con)
+
+    session$userData$student_id <- sid
+    removeModal()
+  }, error = function(e) {
+    showModal(modalDialog(
+      title = "Couldn't connect",
+      paste("There was a problem saving your name (database error):", conditionMessage(e)),
+      footer = actionButton("submit_name", "Try again"),
+      easyClose = FALSE
+    ))
+  })
+})
+```
+
+```{r, context="server"}
+# --- Tutor chat wiring --------------------------------------------------
+# Each graded exercise gets its own always-available (collapsed by
+# default) tutor chat panel. See wire_tutor_chat() in R/tutor_utils.R for
+# the full mechanism (fresh client per open, both directions logged).
+
+wire_tutor_chat("module4_rename", "tutor_chat_1", "tutor_accordion_1", "Ask the Tutor", input, output, session)
+wire_tutor_chat("module4_indexing", "tutor_chat_2", "tutor_accordion_2", "Ask the Tutor", input, output, session)
+wire_tutor_chat("module4_filter_select", "tutor_chat_3", "tutor_accordion_3", "Ask the Tutor", input, output, session)
+wire_tutor_chat("module4_mutate_arrange", "tutor_chat_4", "tutor_accordion_4", "Ask the Tutor", input, output, session)
+wire_tutor_chat("module4_group_summarize", "tutor_chat_5", "tutor_accordion_5", "Ask the Tutor", input, output, session)
+wire_tutor_chat("module4_na_handling", "tutor_chat_6", "tutor_accordion_6", "Ask the Tutor", input, output, session)
+wire_tutor_chat("module4_cumulative", "tutor_chat_7", "tutor_accordion_7", "Ask the Tutor", input, output, session)
+```
+
+```{r, context="server"}
+# --- Fix for quiz/exercise feedback outputs getting stuck "recalculating"
+# if bound while their topic is hidden -- see unstick_hidden_outputs() in
+# R/tutor_utils.R.
+unstick_hidden_outputs(output, session)
+```
+
+```{r, context="server"}
+# --- Quiz question wiring ------------------------------------------------
+# See quiz_question_ui()/quiz_question_server() in R/tutor_utils.R.
+
+quiz_question_server(input, output, session, "inspect_quiz", list(
+  wrong_nrow = list(correct = FALSE, message = "nrow() only tells you the number of rows -- not each column's type."),
+  correct = list(correct = TRUE, message = "Correct!"),
+  wrong_sum = list(correct = FALSE, message = "sum() only works on numeric vectors, not a whole data frame with mixed column types.")
+))
+
+quiz_question_server(input, output, session, "indexing_quiz", list(
+  correct = list(correct = TRUE, message = "Correct!"),
+  wrong_compare = list(correct = FALSE, message = "It's not comparing two data frames -- it's separating rows from columns within one."),
+  wrong_rename = list(correct = FALSE, message = "Indexing brackets aren't for renaming -- that's what rename() is for.")
+))
+
+quiz_question_server(input, output, session, "pipe_quiz", list(
+  correct = list(correct = TRUE, message = "Correct!"),
+  wrong_multiply = list(correct = FALSE, message = "The pipe isn't arithmetic -- it just passes the left side in as the first argument to the right side."),
+  wrong_dataframe_only = list(correct = FALSE, message = "The pipe works with any kind of value, not just data frames.")
+))
+
+quiz_question_server(input, output, session, "na_quiz", list(
+  wrong_20 = list(correct = FALSE, message = "R doesn't just skip the NA silently -- it has to be told to."),
+  correct = list(correct = TRUE, message = "Correct! Any arithmetic involving NA returns NA by default, unless you tell R how to handle it."),
+  wrong_40 = list(correct = FALSE, message = "R doesn't treat a missing value as 0 -- it treats the whole result as unknown (NA).")
+))
+```
+
+```{r, context="server"}
+# --- Exercise wiring -------------------------------------------------------
+# See exercise_ui()/exercise_server() in R/tutor_utils.R.
+
+exercise_server(
+  input, output, session, "rename_exercise", "module4_rename", "tutor_accordion_1",
+  starting_code = "fish_clean <- fish_survey |> rename(\n  fish_id = FIXME,\n  species = FIXME,\n  length_mm = FIXME,\n  weight_g = FIXME,\n  lake_site = FIXME\n)\nnames(fish_clean)",
+  evaluate_fn = function(user_code, result, envir, stage) evaluate_rename_exercise(user_code, result, envir, stage)
+)
+
+exercise_server(
+  input, output, session, "indexing_exercise", "module4_indexing", "tutor_accordion_2",
+  starting_code = "fish_clean[fish_clean$lake_site == FIXME, ]",
+  evaluate_fn = function(user_code, result, envir, stage) evaluate_indexing_exercise(user_code, result, stage)
+)
+
+exercise_server(
+  input, output, session, "filter_select_exercise", "module4_filter_select", "tutor_accordion_3",
+  starting_code = "fish_clean |>\n  filter(species == FIXME) |>\n  select(species, FIXME)",
+  evaluate_fn = function(user_code, result, envir, stage) evaluate_filter_select_exercise(user_code, result, stage)
+)
+
+exercise_server(
+  input, output, session, "mutate_arrange_exercise", "module4_mutate_arrange", "tutor_accordion_4",
+  starting_code = "fish_clean |>\n  mutate(weight_kg = FIXME) |>\n  arrange(FIXME)",
+  evaluate_fn = function(user_code, result, envir, stage) evaluate_mutate_arrange_exercise(user_code, result, stage)
+)
+
+exercise_server(
+  input, output, session, "group_summarize_exercise", "module4_group_summarize", "tutor_accordion_5",
+  starting_code = "fish_clean |>\n  group_by(FIXME) |>\n  summarize(mean_length = mean(length_mm, na.rm = FIXME))",
+  evaluate_fn = function(user_code, result, envir, stage) evaluate_group_summarize_exercise(user_code, result, stage)
+)
+
+exercise_server(
+  input, output, session, "na_handling_exercise", "module4_na_handling", "tutor_accordion_6",
+  starting_code = "fish_clean |>\n  filter(FIXME) |>\n  summarize(avg_weight = mean(weight_g))",
+  evaluate_fn = function(user_code, result, envir, stage) evaluate_na_handling_exercise(user_code, result, stage)
+)
+
+exercise_server(
+  input, output, session, "cumulative_exercise", "module4_cumulative", "tutor_accordion_7",
+  starting_code = "fish_clean |>\n  filter(FIXME) |>\n  group_by(FIXME) |>\n  summarize(avg_length = mean(length_mm)) |>\n  arrange(FIXME)",
+  evaluate_fn = function(user_code, result, envir, stage) evaluate_cumulative_exercise(user_code, result, stage)
+)
+```
+
+## Welcome back
+
+```{r, echo=FALSE}
+bs5_theme_dependencies()
+```
+
+Modules 1-3 got you comfortable with R itself: running code, reading errors, and working with the basic building blocks (values, vectors, data frames as a concept). This module is where you start actually **working with a real data frame** -- inspecting it, cleaning it up, and asking questions of it using `dplyr`, the most common R package for this kind of work.
+
+Throughout this module you'll use a small practice data set, `fish_survey` -- results from a (fictional) fish survey of two lakes. It looks like this:
+
+```{r fish-survey-demo, echo=TRUE}
+fish_survey
+```
+
+Real data almost never arrives this clean-looking, though -- notice the column names (`Fish.ID`, `Species.Name`, ...) and the couple of missing values (`NA`). Both of those are exactly what this module is about.
+
+## Inspecting a data frame
+
+Before changing anything, it's worth looking at what you actually have. A few functions for that:
+
+- **`str(x)`** -- a compact summary: each column's name, type, and a preview of its values
+- **`head(x)`** -- the first few rows
+- **`nrow(x)` / `ncol(x)`** -- the number of rows / columns
+- **`names(x)`** -- just the column names
+- **`summary(x)`** -- basic statistics (min, max, mean, etc.) for each column
+
+```{r inspect-demo, echo=TRUE}
+str(fish_survey)
+```
+
+```{r, echo=FALSE}
+quiz_question_ui("inspect_quiz", "Which function would you use to quickly see each column's data type and a preview of its values?", c(
+  "nrow(fish_survey)" = "wrong_nrow",
+  "str(fish_survey)" = "correct",
+  "sum(fish_survey)" = "wrong_sum"
+))
+```
+
+## Renaming columns
+
+`fish_survey`'s column names (`Fish.ID`, `Species.Name`, `Length.mm`, `Weight.g`, `Lake.Site`) are a common side effect of importing data from a spreadsheet or CSV -- spaces and mixed capitalization get replaced with dots. Before doing anything else, it's worth renaming them to this course's `snake_case` convention, using dplyr's `rename()`:
+
+```{r rename-demo, echo=TRUE}
+fish_survey |> rename(species = Species.Name) |> names()
+```
+
+`rename()` always reads as `new_name = OldName` -- the new name comes first.
+
+### Practice: rename every column
+
+Below, rename all five columns of `fish_survey` to `fish_id`, `species`, `length_mm`, `weight_g`, and `lake_site` (in that order), replacing each `FIXME` with the matching original column name. Store the result in `fish_clean` -- you'll use that cleaned-up version for the rest of this module.
+
+```{r, echo=FALSE}
+exercise_ui("rename_exercise", "fish_clean <- fish_survey |> rename(\n  fish_id = FIXME,\n  species = FIXME,\n  length_mm = FIXME,\n  weight_g = FIXME,\n  lake_site = FIXME\n)\nnames(fish_clean)")
+```
+
+Stuck, or want to double check your thinking? The tutor chat below is available any time -- before you submit, after a failed attempt, or even after you've already passed.
+
+```{r, echo=FALSE}
+accordion(
+  id = "tutor_accordion_1",
+  open = FALSE,
+  accordion_panel(
+    title = "Ask the Tutor",
+    chat_ui(
+      "tutor_chat_1",
+      placeholder = "Ask a question about this exercise...",
+      greeting = TUTOR_CHAT_GREETING,
+      allow_attachments = FALSE
+    )
+  )
+)
+```
+
+## Indexing and subsetting
+
+From here on, every exercise and demo uses `fish_clean` -- the already-renamed version of the data (so this module doesn't depend on your rename exercise above being correct).
+
+Before dplyr, base R already has a way to pull out specific rows and columns, using square brackets: `df[rows, columns]`. Leaving either side blank keeps everything on that side.
+
+```{r indexing-demo, echo=TRUE}
+fish_clean[1, ]
+fish_clean[, "species"]
+```
+
+You can also use a condition instead of a row number, to keep only rows matching that condition:
+
+```{r indexing-condition-demo, echo=TRUE}
+fish_clean[fish_clean$species == "Bluegill", ]
+```
+
+```{r, echo=FALSE}
+quiz_question_ui("indexing_quiz", "In fish_clean[fish_clean$lake_site == \"North Lake\", ], what does the comma separate?", c(
+  "Rows (before the comma) from columns (after the comma)" = "correct",
+  "Two separate data frames being compared" = "wrong_compare",
+  "The old column name from the new one" = "wrong_rename"
+))
+```
+
+### Practice: subset by condition
+
+Below, using square-bracket indexing (not a dplyr verb), return only the rows of `fish_clean` where `lake_site` equals `"North Lake"`, replacing `FIXME`.
+
+```{r, echo=FALSE}
+exercise_ui("indexing_exercise", "fish_clean[fish_clean$lake_site == FIXME, ]")
+```
+
+Stuck, or want to double check your thinking? The tutor chat below is available any time -- before you submit, after a failed attempt, or even after you've already passed.
+
+```{r, echo=FALSE}
+accordion(
+  id = "tutor_accordion_2",
+  open = FALSE,
+  accordion_panel(
+    title = "Ask the Tutor",
+    chat_ui(
+      "tutor_chat_2",
+      placeholder = "Ask a question about this exercise...",
+      greeting = TUTOR_CHAT_GREETING,
+      allow_attachments = FALSE
+    )
+  )
+)
+```
+
+## The pipe operator
+
+Bracket indexing works, but it gets hard to read once you start chaining several steps together. R's **pipe operator**, `|>`, takes the value on its left and passes it in as the first argument to the function on its right -- so `x |> mean()` is exactly the same as `mean(x)`.
+
+```{r pipe-demo, echo=TRUE}
+fish_clean$length_mm |> mean(na.rm = TRUE)
+```
+
+The real value shows up once you chain multiple steps: `x |> f() |> g()` reads left-to-right as "start with x, do f, then do g" -- which is exactly how the rest of this module's dplyr code is written.
+
+```{r, echo=FALSE}
+quiz_question_ui("pipe_quiz", "What does x |> mean() do?", c(
+  "Passes x as the first argument to mean(), same as mean(x)" = "correct",
+  "Multiplies x by the result of mean()" = "wrong_multiply",
+  "Only works if x is a data frame" = "wrong_dataframe_only"
+))
+```
+
+## Filtering and selecting
+
+Two of dplyr's most common verbs:
+
+- **`filter(df, condition)`** -- keep only rows matching a condition
+- **`select(df, col1, col2, ...)`** -- keep only specific columns
+
+Chained with the pipe:
+
+```{r filter-select-demo, echo=TRUE}
+fish_clean |>
+  filter(lake_site == "South Lake") |>
+  select(species, weight_g)
+```
+
+### Practice: filter and select
+
+Below, starting from `fish_clean`, keep only the rows where `species` is `"Bluegill"`, then keep only the `species` and `length_mm` columns. Replace both `FIXME`s.
+
+```{r, echo=FALSE}
+exercise_ui("filter_select_exercise", "fish_clean |>\n  filter(species == FIXME) |>\n  select(species, FIXME)")
+```
+
+Stuck, or want to double check your thinking? The tutor chat below is available any time -- before you submit, after a failed attempt, or even after you've already passed.
+
+```{r, echo=FALSE}
+accordion(
+  id = "tutor_accordion_3",
+  open = FALSE,
+  accordion_panel(
+    title = "Ask the Tutor",
+    chat_ui(
+      "tutor_chat_3",
+      placeholder = "Ask a question about this exercise...",
+      greeting = TUTOR_CHAT_GREETING,
+      allow_attachments = FALSE
+    )
+  )
+)
+```
+
+## Adding columns and sorting
+
+Two more dplyr verbs:
+
+- **`mutate(df, new_col = expression)`** -- add a new column, calculated from existing ones
+- **`arrange(df, col)`** -- sort rows by a column (ascending by default; wrap it in `desc()` for descending)
+
+```{r mutate-arrange-demo, echo=TRUE}
+fish_clean |>
+  mutate(length_cm = length_mm / 10) |>
+  arrange(desc(weight_g))
+```
+
+### Practice: add a column and sort
+
+Below, starting from `fish_clean`, add a new column `weight_kg` equal to `weight_g` divided by `1000`, then sort the rows so the longest fish (by `length_mm`) comes first. Replace both `FIXME`s.
+
+```{r, echo=FALSE}
+exercise_ui("mutate_arrange_exercise", "fish_clean |>\n  mutate(weight_kg = FIXME) |>\n  arrange(FIXME)")
+```
+
+Stuck, or want to double check your thinking? The tutor chat below is available any time -- before you submit, after a failed attempt, or even after you've already passed.
+
+```{r, echo=FALSE}
+accordion(
+  id = "tutor_accordion_4",
+  open = FALSE,
+  accordion_panel(
+    title = "Ask the Tutor",
+    chat_ui(
+      "tutor_chat_4",
+      placeholder = "Ask a question about this exercise...",
+      greeting = TUTOR_CHAT_GREETING,
+      allow_attachments = FALSE
+    )
+  )
+)
+```
+
+## Grouping and summarizing
+
+`group_by()` and `summarize()` are almost always used together: `group_by(df, col)` splits the data into groups by that column, and `summarize(df, stat = expression)` collapses each group down to one summary row.
+
+```{r group-summarize-demo, echo=TRUE}
+fish_clean |>
+  group_by(lake_site) |>
+  summarize(n_fish = n())
+```
+
+### Practice: average length per species
+
+Below, group `fish_clean` by `species`, then compute each species' mean `length_mm` in a column called `mean_length`. `length_mm` has a missing value, so `mean()` will need `na.rm = TRUE` to skip it rather than returning `NA`. Replace both `FIXME`s.
+
+```{r, echo=FALSE}
+exercise_ui("group_summarize_exercise", "fish_clean |>\n  group_by(FIXME) |>\n  summarize(mean_length = mean(length_mm, na.rm = FIXME))")
+```
+
+Stuck, or want to double check your thinking? The tutor chat below is available any time -- before you submit, after a failed attempt, or even after you've already passed.
+
+```{r, echo=FALSE}
+accordion(
+  id = "tutor_accordion_5",
+  open = FALSE,
+  accordion_panel(
+    title = "Ask the Tutor",
+    chat_ui(
+      "tutor_chat_5",
+      placeholder = "Ask a question about this exercise...",
+      greeting = TUTOR_CHAT_GREETING,
+      allow_attachments = FALSE
+    )
+  )
+)
+```
+
+## Handling missing data
+
+You just saw one way to handle `NA`s -- `na.rm = TRUE` tells a function like `mean()` to skip them. Another common approach is to remove the incomplete rows entirely first, using `filter()` with `is.na()`:
+
+```{r, echo=FALSE}
+quiz_question_ui("na_quiz", "What does mean(c(10, NA, 30)) return, without any extra arguments?", c(
+  "20" = "wrong_20",
+  "NA" = "correct",
+  "40" = "wrong_40"
+))
+```
+
+`is.na(x)` returns `TRUE` wherever `x` is missing -- so `!is.na(x)` (the `!` means "not") keeps only the rows that **aren't** missing:
+
+```{r na-demo, echo=TRUE}
+fish_clean |> filter(!is.na(weight_g))
+```
+
+### Practice: average weight, missing values removed
+
+Below, filter `fish_clean` down to only the rows where `weight_g` is **not** missing, then compute the mean `weight_g` of the remaining rows in a column called `avg_weight`. Replace `FIXME`.
+
+```{r, echo=FALSE}
+exercise_ui("na_handling_exercise", "fish_clean |>\n  filter(FIXME) |>\n  summarize(avg_weight = mean(weight_g))")
+```
+
+Stuck, or want to double check your thinking? The tutor chat below is available any time -- before you submit, after a failed attempt, or even after you've already passed.
+
+```{r, echo=FALSE}
+accordion(
+  id = "tutor_accordion_6",
+  open = FALSE,
+  accordion_panel(
+    title = "Ask the Tutor",
+    chat_ui(
+      "tutor_chat_6",
+      placeholder = "Ask a question about this exercise...",
+      greeting = TUTOR_CHAT_GREETING,
+      allow_attachments = FALSE
+    )
+  )
+)
+```
+
+## Putting it together
+
+You've now covered inspecting a data frame, renaming columns, indexing, the pipe, and dplyr's core verbs -- `filter()`, `select()`, `mutate()`, `arrange()`, `group_by()`, and `summarize()` -- plus handling missing values. This last exercise combines several of those into one realistic multi-step pipeline.
+
+### Practice: full cleaning pipeline
+
+Below, starting from `fish_clean`: filter out any row with a missing `length_mm`, group the rest by `lake_site`, compute each lake's mean `length_mm` in a column called `avg_length`, and sort the result so the lake with the **higher** average length comes first. Replace all three `FIXME`s.
+
+```{r, echo=FALSE}
+exercise_ui("cumulative_exercise", "fish_clean |>\n  filter(FIXME) |>\n  group_by(FIXME) |>\n  summarize(avg_length = mean(length_mm)) |>\n  arrange(FIXME)")
+```
+
+Stuck, or want to double check your thinking? The tutor chat below is available any time -- before you submit, after a failed attempt, or even after you've already passed.
+
+```{r, echo=FALSE}
+accordion(
+  id = "tutor_accordion_7",
+  open = FALSE,
+  accordion_panel(
+    title = "Ask the Tutor",
+    chat_ui(
+      "tutor_chat_7",
+      placeholder = "Ask a question about this exercise...",
+      greeting = TUTOR_CHAT_GREETING,
+      allow_attachments = FALSE
+    )
+  )
+)
+```
+
+## Wrapping up
+
+You've now taken a genuinely messy data frame and cleaned it up end to end: inspected it, renamed its columns, subset it, and used the pipe with `filter()`, `select()`, `mutate()`, `arrange()`, `group_by()`, and `summarize()` to answer real questions from it -- including handling missing data along the way.
+
+### Up next
+
+Module 5 moves into actually *doing something* with cleaned-up data: basic plots with `ggplot2`, and a light-touch introduction to a few habits (script organization, file naming, and version control awareness) that carry into real work beyond this course.
