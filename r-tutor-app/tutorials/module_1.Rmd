@@ -77,12 +77,21 @@ showModal(modalDialog(
 
 observeEvent(input$submit_name, {
   req(input$student_name)
-  con <- get_con()
-  sid <- get_or_create_student(con, trimws(input$student_name))
-  dbDisconnect(con)
+  tryCatch({
+    con <- get_con()
+    sid <- get_or_create_student(con, trimws(input$student_name))
+    dbDisconnect(con)
 
-  session$userData$student_id <- sid
-  removeModal()
+    session$userData$student_id <- sid
+    removeModal()
+  }, error = function(e) {
+    showModal(modalDialog(
+      title = "Couldn't connect",
+      paste("There was a problem saving your name (database error):", conditionMessage(e)),
+      footer = actionButton("submit_name", "Try again"),
+      easyClose = FALSE
+    ))
+  })
 })
 ```
 
