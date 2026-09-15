@@ -10,7 +10,6 @@ runtime: shiny_prerendered
 
 ```{r setup, include=FALSE}
 library(learnr)
-library(gradethis)
 library(shiny)
 library(DBI)
 library(RPostgres)
@@ -22,22 +21,16 @@ library(promises)
 # Shared database helper functions (get_con, get_or_create_student,
 # get_exercise_id, log_attempt, log_chat)
 source("R/db_utils.R")
-# Tutor chat context assembly, start_tutor_chat(), and the shared
+# Tutor chat context assembly, start_tutor_chat(), the shared
 # bs5_theme_dependencies()/wire_tutor_chat()/log_attempt_and_maybe_open_chat()
-# wiring used by every module's tutor chat panel.
+# wiring, and the quiz_question_ui()/quiz_question_server() helpers used
+# below in place of learnr::question() -- see their definitions in
+# R/tutor_utils.R for why.
 source("R/tutor_utils.R")
 
-gradethis::gradethis_setup()
-
-# One-time warm-up of learnr's exercise renderer -- see
-# warm_up_exercise_renderer() in R/tutor_utils.R for why this exists.
-# Runs during this setup chunk (once per app process/render), not per
-# student session.
-warm_up_exercise_renderer()
-
-# Grading logic for this module's one exercise. A plain function (not a
-# grade_this() object -- see module_2.Rmd's setup chunk for why) so both
-# the *-check and *-error-check chunks below can share it.
+# Grading logic for this module's one exercise. Unchanged from the
+# gradethis-based version -- only how it's *called* changed (see the
+# "Wrapping up" topic below), not the grading logic itself.
 evaluate_name_exercise <- function(result, stage) {
   passed <- TRUE
   feedback_message <- "Nice -- that's exactly right! Your response has been recorded."
@@ -104,10 +97,100 @@ wire_tutor_chat("module1_name_check", "tutor_chat_1", "tutor_accordion_1", "Ask 
 ```
 
 ```{r, context="server"}
-# --- Fix for quiz/exercise outputs getting stuck "recalculating" forever
-# on any topic beyond the first -- see unstick_hidden_outputs() in
-# R/tutor_utils.R for the full root-cause explanation.
+# --- Fix for quiz/exercise feedback outputs getting stuck "recalculating"
+# if bound while their topic is hidden -- see unstick_hidden_outputs() in
+# R/tutor_utils.R. Kept as a safety net even though the quiz/exercise
+# controls themselves are now plain static Shiny inputs (see below):
+# the *feedback* messages are still ordinary renderUI() outputs, which
+# are still subject to this specific suspend-while-hidden mechanism.
 unstick_hidden_outputs(output, session)
+```
+
+```{r, context="server"}
+# --- Quiz question wiring ------------------------------------------------
+# See quiz_question_ui()/quiz_question_server() in R/tutor_utils.R for why
+# these replace learnr::question() (a client-side interaction-binding bug
+# in learnr's own dynamic quiz UI, confirmed via a wire-level trace against
+# a real deployed server -- see debug_recalculating_bug/HANDOFF.md).
+
+quiz_question_server(input, output, session, "install_quiz", list(
+  wrong_replaces = list(correct = FALSE, message = "Not quite -- RStudio needs R installed underneath it."),
+  correct = list(correct = TRUE, message = "Correct!"),
+  wrong_unrelated = list(correct = FALSE, message = "They're closely related -- RStudio is built specifically to work with R.")
+))
+
+quiz_question_server(input, output, session, "install_r_quiz", list(
+  wrong_delete = list(correct = FALSE, message = "You need to actually run it to install R -- downloading alone doesn't install anything."),
+  correct = list(correct = TRUE, message = "Correct!"),
+  wrong_rename = list(correct = FALSE, message = "Renaming a file doesn't change what it is -- this installs R, not RStudio, regardless of its name.")
+))
+
+quiz_question_server(input, output, session, "install_rstudio_quiz", list(
+  wrong_same = list(correct = FALSE, message = "RStudio is only an interface -- it needs an actual R installation underneath it to run any code."),
+  correct = list(correct = TRUE, message = "Correct!"),
+  wrong_autoinstall = list(correct = FALSE, message = "RStudio doesn't install R on its own -- the two are downloaded and installed as separate steps.")
+))
+
+quiz_question_server(input, output, session, "first_check_quiz", list(
+  wrong_broken = list(correct = FALSE, message = "RStudio itself is very unlikely to be the problem here -- it's almost always about what it's trying to connect to."),
+  correct = list(correct = TRUE, message = "Correct!"),
+  wrong_mathpkg = list(correct = FALSE, message = "Basic arithmetic works in R with no extra packages -- this isn't a missing-package problem.")
+))
+
+quiz_question_server(input, output, session, "panes_quiz", list(
+  wrong_source = list(correct = FALSE, message = "Not quite -- try again."),
+  wrong_console = list(correct = FALSE, message = "Not quite -- try again."),
+  wrong_env = list(correct = FALSE, message = "Not quite -- try again."),
+  correct = list(correct = TRUE, message = "Correct!")
+))
+
+quiz_question_server(input, output, session, "wd_quiz", list(
+  wrong_speed = list(correct = FALSE, message = "Not related to speed."),
+  correct = list(correct = TRUE, message = "Correct!"),
+  wrong_packages = list(correct = FALSE, message = "Packages install fine either way.")
+))
+```
+
+```{r, context="server"}
+# --- "Quick system check" exercise ---------------------------------------
+# Plain Shiny replacement for the gradethis exercise=TRUE chunk (same
+# client-side interaction-binding issue as the quizzes above). A plain
+# textAreaInput() stands in for the ace.js code editor learnr normally
+# provides -- a deliberate simplification for this trivial one-line
+# exercise, not a general-purpose code editor replacement.
+
+observeEvent(input$name_exercise_reset, {
+  updateTextAreaInput(session, "name_exercise_code", value = '"___"')
+  output$name_exercise_feedback <- renderUI(NULL)
+})
+
+observeEvent(input$name_exercise_submit, {
+  user_code <- input$name_exercise_code
+  parsed_result <- tryCatch(eval(parse(text = user_code)), error = function(e) e)
+  is_error <- inherits(parsed_result, "error")
+  stage <- if (is_error) "error_check" else "check"
+  eval_result <- evaluate_name_exercise(if (is_error) NULL else parsed_result, stage)
+
+  student_id <- session$userData$student_id
+  log_attempt_and_maybe_open_chat(
+    "module1_name_check", student_id, user_code,
+    eval_result$passed, eval_result$message, "tutor_accordion_1", session
+  )
+
+  output$name_exercise_feedback <- renderUI({
+    tagList(
+      tags$pre(if (is_error) {
+        paste("Error:", conditionMessage(parsed_result))
+      } else {
+        paste(utils::capture.output(print(parsed_result)), collapse = "\n")
+      }),
+      tags$div(
+        class = if (eval_result$passed) "alert alert-success" else "alert alert-danger",
+        eval_result$message
+      )
+    )
+  })
+})
 ```
 
 ## Welcome
@@ -129,13 +212,12 @@ R and RStudio are two different pieces of software that work together:
 
 You install them in that order: R first (from CRAN), then RStudio (from posit.co), since RStudio needs an existing R installation to attach to.
 
-```{r install-quiz, echo=FALSE}
-question("Which of these is true about the relationship between R and RStudio?",
-  answer("RStudio replaces R -- you only need to install RStudio.", message = "Not quite -- RStudio needs R installed underneath it."),
-  answer("R is the language/engine, and RStudio is an interface built on top of it.", correct = TRUE),
-  answer("R and RStudio are two unrelated tools with no connection.", message = "They're closely related -- RStudio is built specifically to work with R."),
-  allow_retry = TRUE
-)
+```{r, echo=FALSE}
+quiz_question_ui("install_quiz", "Which of these is true about the relationship between R and RStudio?", c(
+  "RStudio replaces R -- you only need to install RStudio." = "wrong_replaces",
+  "R is the language/engine, and RStudio is an interface built on top of it." = "correct",
+  "R and RStudio are two unrelated tools with no connection." = "wrong_unrelated"
+))
 ```
 
 This tutorial runs entirely in your browser, so it has no way to see your own computer or confirm your install actually worked -- the steps below are the real, click-by-click process, but you're doing them in a separate window, alongside this one. Keep both open side by side if you can.
@@ -149,13 +231,12 @@ This tutorial runs entirely in your browser, so it has no way to see your own co
 
 That's it for this step -- once the installer finishes, R itself is installed, but you won't see any new icon to click yet. That's expected; R on its own has no visible interface. That's exactly what RStudio is for, which is the next step.
 
-```{r install-r-quiz, echo=FALSE}
-question("You've just downloaded the R installer file (the .exe or .pkg). What should you do with it?",
-  answer("Delete it -- you don't need it once it's downloaded.", message = "You need to actually run it to install R -- downloading alone doesn't install anything."),
-  answer("Open/run it and click through the installation wizard, accepting the defaults.", correct = TRUE),
-  answer("Rename it to \"RStudio\" so it opens the right program.", message = "Renaming a file doesn't change what it is -- this installs R, not RStudio, regardless of its name."),
-  allow_retry = TRUE
-)
+```{r, echo=FALSE}
+quiz_question_ui("install_r_quiz", "You've just downloaded the R installer file (the .exe or .pkg). What should you do with it?", c(
+  "Delete it -- you don't need it once it's downloaded." = "wrong_delete",
+  "Open/run it and click through the installation wizard, accepting the defaults." = "correct",
+  "Rename it to \"RStudio\" so it opens the right program." = "wrong_rename"
+))
 ```
 
 ### Step 2: Install RStudio
@@ -165,13 +246,12 @@ question("You've just downloaded the R installer file (the .exe or .pkg). What s
 3. Click the download button for the free **RStudio Desktop** version matching your operating system.
 4. Run the installer and, same as before, click through it accepting the defaults.
 
-```{r install-rstudio-quiz, echo=FALSE}
-question("Suppose you skipped installing R and only installed RStudio. What would happen when you tried to open RStudio?",
-  answer("It would work exactly the same -- RStudio doesn't actually need R.", message = "RStudio is only an interface -- it needs an actual R installation underneath it to run any code."),
-  answer("It would either fail to open properly or prompt you that no R installation was found.", correct = TRUE),
-  answer("It would automatically download and install R for you first.", message = "RStudio doesn't install R on its own -- the two are downloaded and installed as separate steps."),
-  allow_retry = TRUE
-)
+```{r, echo=FALSE}
+quiz_question_ui("install_rstudio_quiz", "Suppose you skipped installing R and only installed RStudio. What would happen when you tried to open RStudio?", c(
+  "It would work exactly the same -- RStudio doesn't actually need R." = "wrong_same",
+  "It would either fail to open properly or prompt you that no R installation was found." = "correct",
+  "It would automatically download and install R for you first." = "wrong_autoinstall"
+))
 ```
 
 ### Step 3: Open RStudio and do a first check
@@ -194,13 +274,12 @@ and press **Enter**. You should see:
 
 That confirms R and RStudio are both installed and talking to each other correctly.
 
-```{r first-check-quiz, echo=FALSE}
-question("You open RStudio, type 2 + 2 in the Console, and press Enter -- but instead of [1] 4, you get an error like \"R version not found\" or the Console looks broken. What's the most likely explanation?",
-  answer("RStudio is broken and needs to be reinstalled.", message = "RStudio itself is very unlikely to be the problem here -- it's almost always about what it's trying to connect to."),
-  answer("R wasn't fully installed (or installed correctly) in Step 1 -- go back and reinstall R, then reopen RStudio.", correct = TRUE),
-  answer("You need to install a separate \"math package\" before RStudio can do arithmetic.", message = "Basic arithmetic works in R with no extra packages -- this isn't a missing-package problem."),
-  allow_retry = TRUE
-)
+```{r, echo=FALSE}
+quiz_question_ui("first_check_quiz", "You open RStudio, type 2 + 2 in the Console, and press Enter -- but instead of [1] 4, you get an error like \"R version not found\" or the Console looks broken. What's the most likely explanation?", c(
+  "RStudio is broken and needs to be reinstalled." = "wrong_broken",
+  "R wasn't fully installed (or installed correctly) in Step 1 -- go back and reinstall R, then reopen RStudio." = "correct",
+  "You need to install a separate \"math package\" before RStudio can do arithmetic." = "wrong_mathpkg"
+))
 ```
 
 ## The RStudio panes
@@ -212,14 +291,13 @@ When you open RStudio, you'll typically see four panes:
 - **Environment / History** (top-right) -- shows the objects you've created and what you've run
 - **Files / Plots / Packages / Help** (bottom-right) -- a multi-purpose pane for browsing files, viewing plots, managing packages, and reading documentation
 
-```{r panes-quiz, echo=FALSE}
-question("If you want to see a plot you just created, which pane would you look at?",
-  answer("Source"),
-  answer("Console"),
-  answer("Environment / History"),
-  answer("Files / Plots / Packages / Help", correct = TRUE),
-  allow_retry = TRUE
-)
+```{r, echo=FALSE}
+quiz_question_ui("panes_quiz", "If you want to see a plot you just created, which pane would you look at?", c(
+  "Source" = "wrong_source",
+  "Console" = "wrong_console",
+  "Environment / History" = "wrong_env",
+  "Files / Plots / Packages / Help" = "correct"
+))
 ```
 
 ## Working directory
@@ -228,13 +306,12 @@ Your **working directory** is the folder R considers "home base" for the current
 
 The most reliable way to manage this is with an **RStudio Project** (a folder with a `.Rproj` file in it). Opening a project automatically sets the working directory to that project's folder, which avoids a lot of "file not found" headaches later, especially once we start importing data.
 
-```{r wd-quiz, echo=FALSE}
-question("What's the main benefit of using an RStudio Project instead of just opening loose scripts?",
-  answer("It makes your code run faster.", message = "Not related to speed."),
-  answer("It automatically sets your working directory to a consistent, predictable folder.", correct = TRUE),
-  answer("It's required to install packages.", message = "Packages install fine either way."),
-  allow_retry = TRUE
-)
+```{r, echo=FALSE}
+quiz_question_ui("wd_quiz", "What's the main benefit of using an RStudio Project instead of just opening loose scripts?", c(
+  "It makes your code run faster." = "wrong_speed",
+  "It automatically sets your working directory to a consistent, predictable folder." = "correct",
+  "It's required to install packages." = "wrong_packages"
+))
 ```
 
 ## Wrapping up
@@ -243,28 +320,16 @@ question("What's the main benefit of using an RStudio Project instead of just op
 
 Before moving on, let's confirm everything's connected properly. Replace the placeholder below with your own name, keeping the quotation marks, and click **Submit Answer**.
 
-```{r name-exercise, exercise=TRUE}
-"___"
+```{r, echo=FALSE}
+tagList(
+  textAreaInput("name_exercise_code", label = "R Code", value = '"___"', rows = 2, width = "100%"),
+  actionButton("name_exercise_submit", "Submit Answer", class = "btn btn-primary btn-sm"),
+  actionButton("name_exercise_reset", "Start Over", class = "btn btn-light btn-sm")
+)
 ```
 
-```{r name-exercise-check}
-grade_this({
-  session <- shiny::getDefaultReactiveDomain()
-  student_id <- if (!is.null(session)) session$userData$student_id else NA
-  result <- evaluate_name_exercise(.result, .stage)
-  log_attempt_and_maybe_open_chat("module1_name_check", student_id, .user_code, result$passed, result$message, "tutor_accordion_1", session)
-  if (result$passed) pass(result$message) else fail(result$message)
-})
-```
-
-```{r name-exercise-error-check}
-grade_this({
-  session <- shiny::getDefaultReactiveDomain()
-  student_id <- if (!is.null(session)) session$userData$student_id else NA
-  result <- evaluate_name_exercise(.result, .stage)
-  log_attempt_and_maybe_open_chat("module1_name_check", student_id, .user_code, result$passed, result$message, "tutor_accordion_1", session)
-  if (result$passed) pass(result$message) else fail(result$message)
-})
+```{r, echo=FALSE}
+uiOutput("name_exercise_feedback")
 ```
 
 Stuck, or want to double check your thinking? The tutor chat below is available any time -- before you submit, after a failed attempt, or even after you've already passed.
