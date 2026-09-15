@@ -4,7 +4,7 @@
 # Usage: Rscript R/run_tutorial.R
 # Then open http://127.0.0.1:7412 in a browser.
 
-MODULE_FILE <- "module_2.Rmd"
+MODULE_FILE <- "module_1.Rmd"
 PROJECT_ROOT <- "C:/Users/sarah/OneDrive/Documents/R_tutor/r-tutor-app"
 
 readRenviron(file.path(PROJECT_ROOT, ".Renviron"))
@@ -15,6 +15,11 @@ setwd(file.path(PROJECT_ROOT, "tutorials"))
 Sys.setenv(RSTUDIO_PANDOC = "C:/Program Files/RStudio/resources/app/bin/quarto/bin/tools")
 
 options(shiny.launch.browser = FALSE)
+# Belt-and-suspenders alongside the project's .Rprofile (which only takes
+# effect if R started with this project's root as its working directory) --
+# see .Rprofile for why local-filesystem tutorial progress caching needs to
+# stay off for local testing.
+options(tutorial.storage = "none")
 rmarkdown::run(
   MODULE_FILE,
   shiny_args = list(host = "127.0.0.1", port = 7412, launch.browser = FALSE)

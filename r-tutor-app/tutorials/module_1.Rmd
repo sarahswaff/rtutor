@@ -116,6 +116,71 @@ question("Which of these is true about the relationship between R and RStudio?",
 )
 ```
 
+This tutorial runs entirely in your browser, so it has no way to see your own computer or confirm your install actually worked -- the steps below are the real, click-by-click process, but you're doing them in a separate window, alongside this one. Keep both open side by side if you can.
+
+### Step 1: Install R
+
+1. Go to **[cran.r-project.org](https://cran.r-project.org)** -- this is CRAN, the official source for R. (Don't search for "R" in a general search engine first -- it's a one-letter name and the results are mostly noise. Go straight to CRAN.)
+2. Near the top, click the download link for your operating system -- **Download R for Windows**, **macOS**, or **Linux**.
+3. **Windows:** click **base**, then click the large **Download R-4.x.x for Windows** link. Run the downloaded `.exe` file, and click through the installer -- **Next**, **Next**, **Install**, **Finish** -- accepting every default option. You don't need to change anything.
+4. **Mac:** you'll see two `.pkg` links, one for **Apple silicon (arm64)** and one for **Intel (x86_64)**. If you're not sure which chip your Mac has, check the Apple menu (top-left) > **About This Mac**. Download the matching one, open it, and follow the installer, accepting the defaults.
+
+That's it for this step -- once the installer finishes, R itself is installed, but you won't see any new icon to click yet. That's expected; R on its own has no visible interface. That's exactly what RStudio is for, which is the next step.
+
+```{r install-r-quiz, echo=FALSE}
+question("You've just downloaded the R installer file (the .exe or .pkg). What should you do with it?",
+  answer("Delete it -- you don't need it once it's downloaded.", message = "You need to actually run it to install R -- downloading alone doesn't install anything."),
+  answer("Open/run it and click through the installation wizard, accepting the defaults.", correct = TRUE),
+  answer("Rename it to \"RStudio\" so it opens the right program.", message = "Renaming a file doesn't change what it is -- this installs R, not RStudio, regardless of its name."),
+  allow_retry = TRUE
+)
+```
+
+### Step 2: Install RStudio
+
+1. Go to **[posit.co/download/rstudio-desktop](https://posit.co/download/rstudio-desktop/)**.
+2. That page actually lists installing R as its own "Step 1" (which you already did above) -- scroll down to **Step 2: Install RStudio**.
+3. Click the download button for the free **RStudio Desktop** version matching your operating system.
+4. Run the installer and, same as before, click through it accepting the defaults.
+
+```{r install-rstudio-quiz, echo=FALSE}
+question("Suppose you skipped installing R and only installed RStudio. What would happen when you tried to open RStudio?",
+  answer("It would work exactly the same -- RStudio doesn't actually need R.", message = "RStudio is only an interface -- it needs an actual R installation underneath it to run any code."),
+  answer("It would either fail to open properly or prompt you that no R installation was found.", correct = TRUE),
+  answer("It would automatically download and install R for you first.", message = "RStudio doesn't install R on its own -- the two are downloaded and installed as separate steps."),
+  allow_retry = TRUE
+)
+```
+
+### Step 3: Open RStudio and do a first check
+
+Open **RStudio** now -- not R by itself; look for the RStudio icon specifically, since installing R doesn't create a separate icon for it, and R itself has no real interface to open.
+
+The first time it launches, RStudio automatically detects the R installation from Step 1 -- you shouldn't need to point it at anything manually. You'll see a window split into a few panes (covered in detail in the next section); for now, find the **Console** pane -- it's the one with a `>` prompt waiting for input.
+
+Click into the Console, type:
+
+```
+2 + 2
+```
+
+and press **Enter**. You should see:
+
+```
+[1] 4
+```
+
+That confirms R and RStudio are both installed and talking to each other correctly.
+
+```{r first-check-quiz, echo=FALSE}
+question("You open RStudio, type 2 + 2 in the Console, and press Enter -- but instead of [1] 4, you get an error like \"R version not found\" or the Console looks broken. What's the most likely explanation?",
+  answer("RStudio is broken and needs to be reinstalled.", message = "RStudio itself is very unlikely to be the problem here -- it's almost always about what it's trying to connect to."),
+  answer("R wasn't fully installed (or installed correctly) in Step 1 -- go back and reinstall R, then reopen RStudio.", correct = TRUE),
+  answer("You need to install a separate \"math package\" before RStudio can do arithmetic.", message = "Basic arithmetic works in R with no extra packages -- this isn't a missing-package problem."),
+  allow_retry = TRUE
+)
+```
+
 ## The RStudio panes
 
 When you open RStudio, you'll typically see four panes:
@@ -191,7 +256,7 @@ accordion(
     chat_ui(
       "tutor_chat_1",
       placeholder = "Ask a question about this exercise...",
-      greeting = "Hi! I'm here if you want to talk through this exercise. Ask me anything -- I won't just hand you the answer, but I'll help you get there.",
+      greeting = TUTOR_CHAT_GREETING,
       allow_attachments = FALSE
     )
   )

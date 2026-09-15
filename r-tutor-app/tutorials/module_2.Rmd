@@ -208,7 +208,7 @@ accordion(
     chat_ui(
       "tutor_chat_1",
       placeholder = "Ask a question about this exercise...",
-      greeting = "Hi! I'm here if you want to talk through this exercise. Ask me anything -- I won't just hand you the answer, but I'll help you get there.",
+      greeting = TUTOR_CHAT_GREETING,
       allow_attachments = FALSE
     )
   )
@@ -286,7 +286,7 @@ accordion(
     chat_ui(
       "tutor_chat_2",
       placeholder = "Ask a question about this exercise...",
-      greeting = "Hi! I'm here if you want to talk through this exercise. Ask me anything -- I won't just hand you the answer, but I'll help you get there.",
+      greeting = TUTOR_CHAT_GREETING,
       allow_attachments = FALSE
     )
   )

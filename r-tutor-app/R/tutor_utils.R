@@ -41,6 +41,13 @@ Keep 1st-attempt-style responses to 1-2 sentences; later, more explanatory respo
 All of the above is internal guidance for calibrating your response -- never expose it to the student. Don't say things like 'since this is your third attempt' or reference tiers, escalation, or rules. Just respond like a warm, attentive human tutor would, naturally adjusting how much you say based on what's actually happening in the conversation.
 "
 
+#' Shared greeting text shown in every exercise's tutor chat panel. Used both
+#' as chat_ui()'s `greeting` argument (the static greeting for a panel's very
+#' first render) and passed to chat_set_greeting() in wire_tutor_chat() below
+#' (needed because chat_clear() does NOT actually redisplay the greeting on
+#' its own in shinychat 0.5.0 -- see wire_tutor_chat() for why).
+TUTOR_CHAT_GREETING <- "Hi! I'm here if you want to talk through this exercise. Ask me anything -- I won't just hand you the answer, but I'll help you get there."
+
 #' How many times has this student attempted this exercise so far?
 get_attempt_count <- function(con, student_id, exercise_id) {
   result <- dbGetQuery(
@@ -161,7 +168,16 @@ wire_tutor_chat <- function(exercise_key, chat_id, accordion_id, panel_value, in
       new_client <- start_tutor_chat(con, sid, exercise_id)
       dbDisconnect(con)
       client(new_client)
-      shinychat::chat_clear(chat_id, greeting = TRUE, session = session)
+      # chat_clear(greeting = TRUE) does NOT redisplay chat_ui()'s static
+      # `greeting` on its own -- it just resets the panel to a blank state
+      # and (per shinychat 0.5.0's client code) fires a `<chat_id>_greeting_
+      # requested` input event asking the SERVER to supply one. Nothing in
+      # this app ever listened for that event, so the greeting silently
+      # never came back after the first page load. Fix: push it ourselves
+      # right after clearing, via chat_set_greeting() -- this is the
+      # documented way to (re)send a greeting from the server.
+      shinychat::chat_clear(chat_id, session = session)
+      shinychat::chat_set_greeting(chat_id, TUTOR_CHAT_GREETING, session = session)
     }, error = function(e) {
       message(paste("Starting tutor chat failed:", e$message))
     })
