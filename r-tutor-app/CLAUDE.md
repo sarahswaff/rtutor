@@ -48,7 +48,7 @@ r-tutor-app/
 │   ├── module_4.Rmd    -- DONE, tested end-to-end (see "Current status" below)
 │   └── module_5.Rmd    -- DONE, tested end-to-end (see "Current status" below)
 ├── student_app/         -- not yet built
-└── instructor_dashboard/ -- not yet built
+└── instructor_dashboard/ -- app.R, built and tested locally (see "Current status")
 ```
 
 ## Database schema (full DDL in schema.sql)
@@ -329,14 +329,78 @@ gotcha below) -- so it's not purely a UX nicety.
   specific bug but remains in place as legitimate hardening regardless.
 
 ## Deliberate scope decisions -- don't relitigate without a real reason
-- No password auth. Students identified by name + email only; roster-CSV matching is planned
-  but NOT YET BUILT (deferred on purpose -- the identity table is designed to make this a
-  drop-in addition later).
+- No password auth for students. Identified by name + email only; roster-CSV matching is
+  planned but NOT YET BUILT (deferred on purpose -- the identity table is designed to make
+  this a drop-in addition later). The instructor dashboard is different -- see below -- it
+  DOES have a password gate, because it exposes every student's real data.
 - No Canvas LTI integration yet. A lightweight roster-CSV approach is planned instead; full
   LTI SSO/gradebook integration is deferred to a later phase pending institutional approval.
-- Instructor dashboard not started -- deliberately deferred until real attempt data exists
-  from testing, so it can be built against real shapes of data rather than guesses.
 - Every exercise attempt is logged as its own row (explicitly chosen over update-in-place).
+
+## Instructor dashboard (`instructor_dashboard/app.R`)
+Built once Modules 1-5 had real attempt data in Supabase to build against (85 students, all
+5 modules represented, at build time). A plain Shiny app (not learnr) -- three tabs:
+- **Overview** -- class-wide stat cards (student count, active-in-7-days, avg. exercises
+  passed, overall pass rate), a pass-rate-by-exercise bar chart (`ggplot2`, colored by
+  module), and a module-completion summary table (how many students passed every exercise
+  in each module).
+- **Roster** -- one row per student: first login, last active, exercises passed/attempted
+  (sortable/searchable `DT` table).
+- **Needs attention** -- students with 3+ attempts on some exercise who still haven't passed
+  it, per `exercise_mastery`. Threshold is a function argument
+  (`get_struggling_students(con, min_attempts = 3)`), not hardcoded in the query.
+
+All four query functions (`get_roster_summary()`, `get_module_completion()`,
+`get_exercise_stats()`, `get_struggling_students()`) live in `R/db_utils.R`, not the app
+itself -- same "one shared place for SQL" rationale as everything else in that file.
+
+**Gotcha that cost real debugging time and will resurface in any future dashboard query:**
+`RPostgres` returns every Postgres `bigint` (i.e. the result of any `COUNT(...)`) as
+`bit64::integer64`, not a plain R integer. `mean()` and other ordinary arithmetic on an
+`integer64` column silently produce a wrong answer with no error or warning (observed:
+`mean()` of a real, correct `integer64` column returning `0` instead of ~0.4) -- this is
+NOT the same failure mode as a normal type error, so it's easy to ship without noticing.
+Every one of the four query functions above pipes its result through `fix_int64_cols()`
+(also in `db_utils.R`), which converts every `integer64` column back to plain `integer`
+right after the query. **Any new dashboard query added later must do the same** -- wrap the
+`dbGetQuery()` call in `fix_int64_cols()` before returning.
+
+**Auth:** a hand-rolled password gate (`check_password()` in `app.R`), not a package
+(`shinymanager` was considered and rejected -- unnecessary dependency for a single shared
+password, and inconsistent with this project's existing preference for plain Shiny over
+extra UI-framework packages, per the `learnr::question()`/gradethis rewrite above). Reads
+the expected password from a new `.Renviron`/Connect-Cloud-dashboard variable,
+`DASHBOARD_PASSWORD` -- this is a FIFTH env var beyond the four listed under "Deployment
+target" above, needed only by the dashboard's own Connect Cloud content item (not the
+tutorial modules). Not real per-instructor auth (no accounts, no audit log of who viewed
+what) -- acceptable for a single-instructor course; would need real auth before handing
+dashboard access to multiple people.
+
+**Local testing:** `Rscript R/run_dashboard.R` (mirrors `R/run_tutorial.R` -- calls
+`readRenviron()` on the project-root `.Renviron` before `setwd()`-ing into
+`instructor_dashboard/`, since R only auto-loads `.Renviron` from the process's original
+working directory). Serves on `http://127.0.0.1:7413`.
+
+**Verified locally against real production data** (85 students, all 5 modules): login
+gate (correct password succeeds, wrong password shows an inline error and does not log in),
+all three tabs render with correct values cross-checked against direct SQL, and the
+"Refresh data" button re-queries. DT tables can render visually blank on the FIRST paint of
+a `bslib::nav_panel` tab that starts hidden (a live Bootstrap-tab/DT initial-width quirk --
+the data is present in the DOM, just not laid out yet); it self-corrects on the next redraw
+and was not treated as a bug to fix, since normal user interaction (scrolling, resizing,
+switching tabs again) is enough to trigger it. Not yet deployed to Connect Cloud, and not
+yet confirmed against a real instructor's actual workflow/questions in practice.
+
+**Deployment infrastructure added, following the exact Modules 1-5 pattern:**
+`deploy/instructor_dashboard/` is a flattened, self-contained copy (`app.R` at the folder
+root, `R/db_utils.R` alongside it, `source("R/db_utils.R")` instead of
+`source("../R/db_utils.R")`) with a generated `manifest.json`
+(`rsconnect::writeManifest(appDir = "deploy/instructor_dashboard", appPrimaryDoc = "app.R")`,
+confirmed `appmode: "shiny"`). Regenerate the same way any time `instructor_dashboard/app.R`
+or `R/db_utils.R` changes. Still needed: create the Connect Cloud content item and set its
+env vars in its own dashboard settings -- the three `SUPABASE_DB_*` vars (the dashboard
+only reads the DB, never writes) plus the new `DASHBOARD_PASSWORD`. `ANTHROPIC_API_KEY` is
+not needed here; the dashboard never calls `tutor_utils.R`.
 
 
 ## Current status / immediate next step
@@ -479,12 +543,11 @@ future module:
   change is purely additive and low-risk).
 
 **Next actions, in order:**
-1. Push Modules 4 and 5 to Connect Cloud: self-contained copies already exist under
-   `deploy/module_4/` and `deploy/module_5/` with regenerated `manifest.json` files
-   (via `rsconnect::writeManifest()`), following the Modules 1-3 pattern exactly. Still
-   needed: create the two new content items on connect.posit.cloud and set each one's four
-   `.Renviron` variables in its own dashboard settings (not yet done -- requires the
-   Connect Cloud dashboard).
+1. DONE: Modules 4 and 5 are deployed to Connect Cloud.
 2. `R/run_tutorial.R`'s `MODULE_FILE` is currently set to `"module_5.Rmd"` (last module
    tested locally) -- change it to whichever module you're actively working on.
-3. Instructor dashboard, once there's real attempt/chat data to build it against.
+3. Instructor dashboard is built and tested locally (see "Instructor dashboard" above).
+   Remaining: push `deploy/instructor_dashboard/` to Connect Cloud as its own content item
+   (set the three `SUPABASE_DB_*` vars plus `DASHBOARD_PASSWORD` in its dashboard settings),
+   then get real usage from the instructor to see if the three tabs actually answer the
+   questions they ask day-to-day, or need adjusting.
