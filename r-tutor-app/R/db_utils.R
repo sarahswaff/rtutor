@@ -254,3 +254,91 @@ get_student_progress <- function(con, student_id) {
     }
   )
 }
+
+# ---------------------------------------------------------------------------
+# Chat transcript + help-category queries, used by the instructor dashboard's
+# "Chats" tab and by R/classify_chat_messages.R (the offline classifier).
+# Categorization is lazy/offline by design -- these functions never touch
+# the live course.Rmd tutorial app, only chat_logs.help_category, which
+# R/classify_chat_messages.R fills in after the fact. See that file and
+# CLAUDE.md's "Chat categorization" section for why.
+# ---------------------------------------------------------------------------
+
+#' The recognized help_category values (must match the DB CHECK constraint
+#' in schema.sql exactly). Exported here so both the classifier and the
+#' dashboard render the same fixed list/order rather than each hardcoding
+#' their own copy.
+HELP_CATEGORIES <- c(
+  "syntax_error", "conceptual_confusion", "how_do_i_start",
+  "wants_answer", "environment_setup", "other"
+)
+
+#' Student messages that haven't been classified yet (help_category IS
+#' NULL). `limit` caps how many the classifier pulls in one batch.
+get_uncategorized_chat_messages <- function(con, limit = 20) {
+  dbGetQuery(con, "
+    SELECT chat_id, message
+    FROM chat_logs
+    WHERE role = 'student' AND help_category IS NULL
+    ORDER BY created_at
+    LIMIT $1
+  ", params = list(limit))
+}
+
+#' Write a classified category back onto one chat_logs row.
+set_chat_message_category <- function(con, chat_id, category) {
+  stopifnot(category %in% HELP_CATEGORIES)
+  dbExecute(
+    con,
+    "UPDATE chat_logs SET help_category = $1 WHERE chat_id = $2",
+    params = list(category, chat_id)
+  )
+}
+
+#' Count of student messages per help_category, across the whole course.
+#' Uncategorized messages (help_category IS NULL -- not yet run through the
+#' classifier) are grouped under the literal label "uncategorized" rather
+#' than dropped, so the dashboard can show that a backlog exists.
+get_help_category_breakdown <- function(con) {
+  fix_int64_cols(dbGetQuery(con, "
+    SELECT COALESCE(help_category, 'uncategorized') AS help_category, COUNT(*) AS n
+    FROM chat_logs
+    WHERE role = 'student'
+    GROUP BY COALESCE(help_category, 'uncategorized')
+    ORDER BY n DESC
+  "))
+}
+
+#' Every student who has at least one logged chat message -- populates the
+#' dashboard's student picker for the transcript viewer.
+get_students_with_chats <- function(con) {
+  dbGetQuery(con, "
+    SELECT DISTINCT s.student_id, s.display_name
+    FROM chat_logs c
+    JOIN students s ON s.student_id = c.student_id
+    ORDER BY s.display_name
+  ")
+}
+
+#' Every exercise a given student has chat history for -- populates the
+#' dashboard's exercise picker once a student is selected.
+get_chatted_exercises_for_student <- function(con, student_id) {
+  dbGetQuery(con, "
+    SELECT DISTINCT e.exercise_id, e.title, m.module_number, e.order_index
+    FROM chat_logs c
+    JOIN exercises e ON e.exercise_id = c.exercise_id
+    JOIN modules m ON m.module_id = e.module_id
+    WHERE c.student_id = $1
+    ORDER BY m.module_number, e.order_index
+  ", params = list(student_id))
+}
+
+#' Full transcript (in order) for one student/exercise pair.
+get_chat_transcript <- function(con, student_id, exercise_id) {
+  dbGetQuery(con, "
+    SELECT role, message, help_category, created_at
+    FROM chat_logs
+    WHERE student_id = $1 AND exercise_id = $2
+    ORDER BY created_at
+  ", params = list(student_id, exercise_id))
+}

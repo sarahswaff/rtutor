@@ -65,6 +65,22 @@ dashboard_ui <- function() {
         DTOutput("struggling_table")
       )
     ),
+    nav_panel(
+      "Chats",
+      card(
+        card_header("What students are asking about"),
+        plotOutput("help_category_plot", height = "300px")
+      ),
+      card(
+        card_header("Browse a conversation"),
+        layout_column_wrap(
+          width = 1 / 2,
+          selectInput("chat_student", "Student", choices = c("Select a student..." = ""), selectize = FALSE),
+          selectInput("chat_exercise", "Exercise", choices = c("Select a student first..." = ""), selectize = FALSE)
+        ),
+        uiOutput("chat_transcript")
+      )
+    ),
     nav_spacer(),
     nav_item(actionButton("refresh_btn", "Refresh data", class = "btn-sm btn-outline-secondary"))
   )
@@ -202,6 +218,92 @@ server <- function(input, output, session) {
     }
     names(s) <- c("Student", "Exercise", "Module #", "Attempts", "Last attempt")
     datatable(s, rownames = FALSE, options = list(pageLength = 25))
+  })
+
+  # ---- Chats tab ----
+  # Categorization is offline/lazy (R/classify_chat_messages.R) -- this tab
+  # only reads chat_logs.help_category, it never classifies anything itself.
+
+  category_breakdown <- reactive({
+    refresh_tick()
+    con <- get_con()
+    on.exit(dbDisconnect(con))
+    get_help_category_breakdown(con)
+  })
+
+  chat_students <- reactive({
+    refresh_tick()
+    con <- get_con()
+    on.exit(dbDisconnect(con))
+    get_students_with_chats(con)
+  })
+
+  observe({
+    cs <- chat_students()
+    req(nrow(cs) > 0)
+    choices <- setNames(cs$student_id, cs$display_name)
+    # Preserve the current selection across a "Refresh data" click -- without
+    # `selected`, updateSelectInput() defaults back to the first choice
+    # (the "Select a student..." placeholder) every time, wiping whatever
+    # the instructor was looking at.
+    updateSelectInput(
+      session, "chat_student",
+      choices = c("Select a student..." = "", choices),
+      selected = input$chat_student
+    )
+  })
+
+  chatted_exercises <- reactive({
+    req(input$chat_student)
+    con <- get_con()
+    on.exit(dbDisconnect(con))
+    get_chatted_exercises_for_student(con, input$chat_student)
+  })
+
+  observeEvent(input$chat_student, {
+    if (!nzchar(input$chat_student)) {
+      updateSelectInput(session, "chat_exercise", choices = c("Select a student first..." = ""))
+      return()
+    }
+    ce <- chatted_exercises()
+    choices <- setNames(ce$exercise_id, sprintf("Module %d: %s", ce$module_number, ce$title))
+    updateSelectInput(session, "chat_exercise", choices = c("Select an exercise..." = "", choices))
+  })
+
+  output$help_category_plot <- renderPlot({
+    cb <- category_breakdown()
+    req(nrow(cb) > 0)
+    cb$help_category <- factor(cb$help_category, levels = rev(cb$help_category[order(cb$n)]))
+
+    ggplot(cb, aes(x = help_category, y = n)) +
+      geom_col(fill = "#2c3e50") +
+      labs(x = NULL, y = "Student messages") +
+      coord_flip() +
+      theme_minimal(base_size = 13)
+  })
+
+  output$chat_transcript <- renderUI({
+    req(input$chat_student, input$chat_exercise)
+    con <- get_con()
+    on.exit(dbDisconnect(con))
+    transcript <- get_chat_transcript(con, input$chat_student, input$chat_exercise)
+
+    if (nrow(transcript) == 0) {
+      return(div(class = "text-muted mt-3", "No messages for this exercise."))
+    }
+
+    tagList(lapply(seq_len(nrow(transcript)), function(i) {
+      row <- transcript[i, ]
+      is_student <- row$role == "student"
+      div(
+        class = paste("mt-2 p-2 rounded", if (is_student) "bg-light" else "bg-white border"),
+        strong(if (is_student) "Student" else "Tutor"),
+        if (is_student && !is.na(row$help_category)) {
+          span(class = "badge bg-secondary ms-2", row$help_category)
+        },
+        div(class = "mt-1", row$message)
+      )
+    }))
   })
 }
 

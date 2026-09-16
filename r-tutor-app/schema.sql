@@ -47,13 +47,21 @@ create table exercise_attempts (
 );
 
 -- chat_logs: every tutor conversation message, tied to student + exercise context.
+-- help_category is filled in later, offline, by R/classify_chat_messages.R --
+-- NULL means "not yet classified" (or, for role='tutor' rows, "not applicable";
+-- only student messages are ever classified). Never set by the live tutorial
+-- or dashboard apps directly.
 create table chat_logs (
-  chat_id      bigserial primary key,
-  student_id   uuid not null references students(student_id),
-  exercise_id  int not null references exercises(exercise_id),
-  role         text not null check (role in ('student', 'tutor')),
-  message      text not null,
-  created_at   timestamptz not null default now()
+  chat_id       bigserial primary key,
+  student_id    uuid not null references students(student_id),
+  exercise_id   int not null references exercises(exercise_id),
+  role          text not null check (role in ('student', 'tutor')),
+  message       text not null,
+  help_category text check (help_category in (
+    'syntax_error', 'conceptual_confusion', 'how_do_i_start',
+    'wants_answer', 'environment_setup', 'other'
+  )),
+  created_at    timestamptz not null default now()
 );
 
 -- Indexes to keep dashboard queries fast as data grows.

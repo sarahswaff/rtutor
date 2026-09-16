@@ -410,6 +410,66 @@ env vars in its own dashboard settings -- the three `SUPABASE_DB_*` vars (the da
 only reads the DB, never writes) plus the new `DASHBOARD_PASSWORD`. `ANTHROPIC_API_KEY` is
 not needed here; the dashboard never calls `tutor_utils.R`.
 
+### Chat categorization + transcript viewer (added later, a 4th "Chats" tab)
+The instructor wanted visibility into *what students are actually asking the tutor*, not
+just pass/fail stats -- this adds that as a 4th dashboard tab, with two parts: a bar chart
+of student messages grouped by help-type, and a browsable per-student/per-exercise
+transcript viewer.
+
+**Categorization is lazy and offline by design, chosen explicitly over real-time
+classification when asked.** `chat_logs` got one new nullable column,
+`help_category` (see `schema.sql` -- a `CHECK` constraint restricts it to the fixed list in
+`HELP_CATEGORIES`, `R/db_utils.R`: `syntax_error`, `conceptual_confusion`, `how_do_i_start`,
+`wants_answer`, `environment_setup`, `other`). NULL means "not yet classified." A brand new
+standalone script, **`R/classify_chat_messages.R`**, is the only thing that ever writes to
+that column -- it is NOT part of either live app (`course.Rmd` or
+`instructor_dashboard/app.R`), so this feature required zero changes and zero redeploy risk
+to the live student-facing tutorial. Run it by hand (`Rscript R/classify_chat_messages.R`)
+whenever you want fresh categories before checking the dashboard; new messages just sit as
+"uncategorized" in the meantime, which the dashboard's chart shows as its own bucket rather
+than hiding. It batches up to 20 uncategorized student messages per Anthropic call (cheap at
+this project's scale, and avoids one API call per message as chat volume grows), asks for a
+JSON array of categories back, and strips a markdown code fence if the model wraps its
+answer in one (it did, every time, despite being told "JSON only, no other text" -- don't
+assume a plain `jsonlite::fromJSON()` call on the raw reply will work without that strip).
+
+Four new query functions in `R/db_utils.R`, same "one shared place for SQL" rationale as
+everything else there: `get_help_category_breakdown()`, `get_students_with_chats()`,
+`get_chatted_exercises_for_student()`, `get_chat_transcript()`.
+
+**Real bug caught during testing**: `get_chatted_exercises_for_student()`'s original query
+used `SELECT DISTINCT ... ORDER BY e.order_index` without `e.order_index` in the `SELECT`
+list -- Postgres rejects this outright (`ORDER BY expressions must appear in select list`
+for `SELECT DISTINCT`), a real, immediate query error, not a subtle logic bug. Fixed by
+adding `e.order_index` to the `SELECT DISTINCT` list.
+
+**The two new `selectInput()`s (student picker, exercise picker) explicitly pass
+`selectize = FALSE`.** Shiny's default selectize.js-enhanced dropdown didn't respond to
+scripted interaction the same way the project's existing plain inputs (radio buttons, text
+areas, buttons) always have -- consistent with this project's now-repeated experience
+(the whole `learnr::question()` rewrite, and `shinychat`'s chat input) that JS-enhanced
+widgets are harder to drive reliably than plain native form elements. Plain `<select>`
+elements are simpler, more accessible, and were the deliberate choice here for the same
+reason plain Shiny inputs replaced learnr's dynamic quiz/exercise UI -- not just a testing
+convenience.
+
+**Also fixed**: the student-picker's populating `observe()` block didn't pass `selected =`
+to `updateSelectInput()`, so clicking "Refresh data" silently reset the currently-selected
+student/exercise back to the placeholder every time. Now passes
+`selected = input$chat_student` to preserve the instructor's place across a refresh.
+
+**Verified locally**: all four new query functions directly against real production data
+(one transcript in particular showed a genuine 3-turn exchange where the tutor correctly
+guided a student through a `rename()` mistake without ever giving the column-name answer
+outright -- a nice incidental confirmation the system prompt design still holds up); the
+"Chats" tab's category chart, student picker, exercise picker (correctly narrows to only
+that student's actual chat history), and full transcript render, all against real data, in
+a real browser. Same `bslib::nav_panel` first-paint-blank quirk noted above applies to this
+tab's chart/transcript on first load -- self-corrects the same way, not a new bug.
+**Not yet deployed to Connect Cloud** -- needs `deploy/instructor_dashboard/` regenerated
+and redeployed (schema migration already applied directly to the live Supabase DB, so no
+DB-side work is needed on deploy, just the app code).
+
 ## Merged course tutorial (`tutorials/course.Rmd`)
 Posit Connect Cloud's Free plan caps published apps at 5 -- confirmed live on the plans
 page (connect.posit.cloud/plans): Free = 5 applications, Basic ($19/mo) = 25, Enhanced
@@ -722,15 +782,18 @@ future module:
    is the only student-facing app now live. (Their source files are still in the repo on
    purpose, per "Merged course tutorial" above.)
 6. DONE: added a standalone tutor chat to Module 1's "Installing R and RStudio" section
-   (see "Install-section tutor chat" above). **Needs one manual check**: a real human
-   sending a message and confirming the AI actually replies in a real browser -- this could
-   not be confirmed via automated testing (see that section for why), and hasn't been
-   deployed/redeployed to Connect Cloud yet either.
-7. Remaining:
-   - Get real instructor usage on the dashboard's three tabs to see if they actually answer
-     the day-to-day questions, or need adjusting.
-   - Chat transcript viewer + help-type categorization for the instructor dashboard --
-     discussed but paused pending two open design questions (classification timing,
-     category taxonomy). Revisit when picking dashboard work back up. Note the
-     install-section chat (item 6) would NOT appear there even once built, since it isn't
-     logged to `chat_logs` at all.
+   (see "Install-section tutor chat" above), and `course.Rmd` has been redeployed to
+   Connect Cloud with it. Still needs one manual check: a real human sending it a message
+   and confirming the AI actually replies -- this could not be confirmed via automated
+   testing (see that section for why).
+7. DONE: chat transcript viewer + help-type categorization added as a 4th dashboard tab,
+   "Chats" (see "Chat categorization" above). Built, tested locally against real production
+   data, migration already applied to the live Supabase DB. **Not yet deployed** -- needs
+   `deploy/instructor_dashboard/` (already regenerated) pushed to Connect Cloud. Note the
+   install-section chat (item 6) will NOT appear here even once deployed, since it isn't
+   logged to `chat_logs` at all -- deliberate, see that section.
+8. Remaining:
+   - Get real instructor usage on the dashboard's tabs to see if they actually answer the
+     day-to-day questions, or need adjusting.
+   - Run `Rscript R/classify_chat_messages.R` periodically (by hand, or set up on a
+     schedule) so the "Chats" tab's categories stay fresh as new conversations happen.
