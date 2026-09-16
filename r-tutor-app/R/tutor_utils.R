@@ -419,10 +419,23 @@ wire_standalone_chat <- function(chat_id, accordion_id, panel_value, input, outp
 #' start_tutor_chat()) every time the accordion panel transitions from
 #' closed to open -- either the student opening it manually, or the
 #' failure-triggered accordion_panel_open() call in a check chunk, since
-#' both update the same `input[[accordion_id]]` value -- so the tutor's
-#' context (attempt count, most recent submission) is never stale. Both
-#' directions of every message are logged via log_chat(). Call once per
-#' exercise from a context="server" chunk, passing that chunk's own
+#' both update the same `input[[accordion_id]]` value. That alone is NOT
+#' enough to keep context fresh, though: this chat is deliberately meant to
+#' stay usable while a student keeps submitting (see every module's "before
+#' you submit, after a failed attempt, or even after you've already
+#' passed"), and a student who submits a NEW attempt without closing the
+#' accordion doesn't trigger a context rebuild at all -- confirmed as a real
+#' bug, not theoretical: a student asked the tutor about their code, then
+#' fixed and passed the exercise in the same still-open chat, and the tutor
+#' kept insisting the submission "still" showed the old failing code. Fixed
+#' by re-fetching the exercise context immediately before EVERY message
+#' (see below) and passing it along as an extra content part in that turn
+#' -- not by rebuilding the whole client, which would silently discard the
+#' conversation history the system prompt explicitly asks the model to
+#' reason over cumulatively.
+#'
+#' Both directions of every message are logged via log_chat(). Call once
+#' per exercise from a context="server" chunk, passing that chunk's own
 #' input/output/session.
 wire_tutor_chat <- function(exercise_key, chat_id, accordion_id, panel_value, input, output, session) {
   client <- shiny::reactiveVal(NULL)
@@ -479,7 +492,27 @@ wire_tutor_chat <- function(exercise_key, chat_id, accordion_id, panel_value, in
       dbDisconnect(con)
     }, error = function(e) message(paste("Chat log (student) failed:", e$message)))
 
-    stream <- client()$stream_async(!!!user_input_raw)
+    # Re-fetch the exercise context right now, not just at chat-open time
+    # (see the note above wire_tutor_chat() for why) -- spliced in as an
+    # extra content part of this same turn, clearly marked as not written
+    # by the student, so a submission made after the chat opened is still
+    # visible to the model on the very next message.
+    fresh_context <- tryCatch({
+      fcon <- get_con()
+      fexercise_id <- get_exercise_id(fcon, exercise_key)
+      msg <- paste0(
+        "[SYSTEM CONTEXT UPDATE -- not written by the student, current as of this message]\n",
+        build_context_message(fcon, sid, fexercise_id)
+      )
+      dbDisconnect(fcon)
+      msg
+    }, error = function(e) NULL)
+
+    stream <- if (!is.null(fresh_context)) {
+      client()$stream_async(fresh_context, !!!user_input_raw)
+    } else {
+      client()$stream_async(!!!user_input_raw)
+    }
     promises::then(
       shinychat::chat_append(chat_id, stream, session = session),
       onFulfilled = function(full_text) {

@@ -276,10 +276,31 @@ function. See `evaluate_name_exercise()` in module_1.Rmd and `evaluate_comment_e
 `evaluate_fix_the_bug_exercise()` in module_2.Rmd for the per-module half of this pattern;
 `log_attempt_and_maybe_open_chat()` itself is shared (see above).
 
-**Tutor context assembly** (see `tutor_utils.R`): before starting each new chat, query the
-attempt count + most recent attempt (code, pass/fail, gradethis message) + the exercise's
-`learning_objective`, and build a dynamic context block appended to the static system
-prompt. The LLM is NEVER given the actual correct solution/answer key.
+**Tutor context assembly** (see `tutor_utils.R`): query the attempt count + most recent
+attempt (code, pass/fail, gradethis message) + the exercise's `learning_objective`, and
+build a dynamic context block. The LLM is NEVER given the actual correct solution/answer
+key.
+
+**REAL BUG, found via a real student conversation, now fixed: context used to only refresh
+when the accordion opened, not on every message.** `start_tutor_chat()` bakes this context
+block into the ellmer client's system prompt once, when `wire_tutor_chat()`'s
+`refresh_chat()` runs -- which only happens when `input[[accordion_id]]` actually changes
+(accordion closed->open). This chat is deliberately meant to stay usable while a student
+keeps submitting without closing it ("before you submit, after a failed attempt, or even
+after you've already passed" -- every module says this) -- so a student who submitted a
+NEW attempt in an already-open chat got a tutor that kept describing their OLD attempt,
+confusingly insisting a since-fixed, since-passed submission still had the original
+problem. Confirmed as a real occurrence, not a hypothetical, from an actual student
+transcript. **Fixed** by re-fetching `build_context_message()` immediately before EVERY
+message (not just at chat-open) in `wire_tutor_chat()`'s user-input `observeEvent`, spliced
+in as an extra content part of that turn (clearly labeled "SYSTEM CONTEXT UPDATE -- not
+written by the student"), rather than rebuilding the whole client -- rebuilding the client
+would silently discard the conversation history the system prompt explicitly asks the
+model to reason over cumulatively, which would be a worse regression than the one being
+fixed. Verified directly against the database (logged a failing attempt, captured the
+context a chat-open would have baked in, then logged a passing attempt and confirmed the
+next `build_context_message()` call -- what the fix now sends on the very next
+message -- correctly reflects the new attempt count and PASSED state).
 
 **The system prompt went through many rounds of deliberate critique** -- see
 `TUTOR_SYSTEM_PROMPT` in `tutor_utils.R` for the current version. Do not casually rewrite it
