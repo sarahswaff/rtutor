@@ -120,7 +120,7 @@ wire_tutor_chat("module1_name_check", "tutor_chat_m1_1", "tutor_accordion_m1_1",
 # Standalone install-help chat for "Installing R and RStudio" -- not tied to
 # a graded exercise, so it uses wire_standalone_chat() instead of
 # wire_tutor_chat(). See R/tutor_utils.R for why.
-wire_standalone_chat("tutor_chat_m1_install", "tutor_accordion_m1_install", "Ask the Tutor", input, output, session)
+wire_standalone_chat("tutor_chat_m1_install", "tutor_accordion_m1_install", "Ask the Tutor", INSTALL_HELP_SYSTEM_PROMPT, INSTALL_HELP_CHAT_GREETING, input, output, session)
 ```
 
 ```{r, context="server"}
@@ -2576,3 +2576,159 @@ That covers the basics of judging model output -- none of it required building a
 - Always compare two models on the same held-out data they weren't trained on -- looking good on data a model has already seen doesn't count.
 
 That's exactly what the capstone preview coming up asks you to do: a real script fits two models to real fish data and prints their RMSE, and your job is to read that output and decide what it's telling you.
+
+```{r setup-module7, context="setup", include=FALSE}
+# Question generators for the Extra Practice module. Each is a zero-argument
+# function, called fresh every time a new question is requested, returning
+# list(prompt=, starting_code=, check=). See random_exercise_ui()/
+# random_exercise_server() in R/tutor_utils.R for the full contract --
+# in particular, why the random values below are baked directly into
+# `prompt`/`starting_code` as literal text rather than stored in a shared
+# variable: this data is per-question, not identical across every student's
+# session the way e.g. Module 4's fish_clean is, so it can't safely live in
+# globalenv() the way that reference data does.
+
+generate_vector_practice <- function() {
+  n <- sample(4:7, 1)
+  values <- sample(1:50, n)
+  idx <- sample(seq_len(n), 1)
+  correct <- values[idx]
+  value_str <- paste(values, collapse = ", ")
+
+  list(
+    prompt = sprintf(
+      "Given practice_vec <- c(%s), write code that returns the value at position %d.",
+      value_str, idx
+    ),
+    starting_code = sprintf("practice_vec <- c(%s)\npractice_vec[FIXME]", value_str),
+    check = function(user_code, result, envir) {
+      uses_index <- grepl("\\[", user_code)
+      correct_result <- is.numeric(result) && length(result) == 1 && isTRUE(result == correct)
+      passed <- uses_index && correct_result
+
+      message <- if (passed) {
+        sprintf("Correct -- position %d is %d.", idx, correct)
+      } else if (!uses_index) {
+        "Use square brackets (like practice_vec[FIXME]) to index into the vector."
+      } else {
+        sprintf("Not quite -- double check you're asking for position %d specifically.", idx)
+      }
+      list(passed = passed, message = message)
+    }
+  )
+}
+
+generate_formula_practice <- function() {
+  templates <- list(
+    function() {
+      l <- sample(2:20, 1)
+      w <- sample(2:20, 1)
+      correct <- l * w
+      list(
+        prompt = sprintf("The area of a rectangle is A = l x w. If l = %d and w = %d, write code that computes A.", l, w),
+        starting_code = sprintf("l <- %d\nw <- %d\nFIXME", l, w),
+        check = function(user_code, result, envir) {
+          passed <- is.numeric(result) && length(result) == 1 && isTRUE(result == correct)
+          list(passed = passed, message = if (passed) sprintf("Correct -- the area is %d.", correct) else "Not quite -- check the formula A = l * w.")
+        }
+      )
+    },
+    function() {
+      a <- sample(3:15, 1)
+      b <- sample(3:15, 1)
+      correct <- sqrt(a^2 + b^2)
+      list(
+        prompt = sprintf("Using the Pythagorean theorem c = sqrt(a^2 + b^2), with a = %d and b = %d, write code that computes c.", a, b),
+        starting_code = sprintf("a <- %d\nb <- %d\nFIXME", a, b),
+        check = function(user_code, result, envir) {
+          uses_sqrt <- grepl("sqrt\\s*\\(", user_code)
+          correct_result <- is.numeric(result) && length(result) == 1 && isTRUE(all.equal(result, correct, tolerance = 0.001))
+          passed <- uses_sqrt && correct_result
+          message <- if (passed) {
+            sprintf("Correct -- c is about %.2f.", correct)
+          } else if (!uses_sqrt) {
+            "Don't forget the square root -- this formula needs sqrt()."
+          } else {
+            "Not quite -- check that both a and b are squared before adding them."
+          }
+          list(passed = passed, message = message)
+        }
+      )
+    },
+    function() {
+      celsius <- sample(-10:40, 1)
+      correct <- celsius * 9 / 5 + 32
+      list(
+        prompt = sprintf("Using F = C x 9/5 + 32, with C = %d, write code that computes F.", celsius),
+        starting_code = sprintf("celsius <- %d\nFIXME", celsius),
+        check = function(user_code, result, envir) {
+          passed <- is.numeric(result) && length(result) == 1 && isTRUE(all.equal(result, correct, tolerance = 0.01))
+          list(passed = passed, message = if (passed) sprintf("Correct -- that's %.1f°F.", correct) else "Not quite -- check the formula F = C * 9/5 + 32.")
+        }
+      )
+    }
+  )
+  templates[[sample(seq_along(templates), 1)]]()
+}
+```
+
+```{r, context="server"}
+# --- Practice chat + exercise wiring --------------------------------------
+# NEW GOTCHA, found building this module: random_exercise_ui()'s panels are
+# entirely dynamic (a bare uiOutput(), filled in by renderUI() after the
+# session starts) -- unlike every other exercise/quiz in this app, which
+# emit fully static HTML at knit time (only their small feedback area is a
+# uiOutput()). Stacking two of these dynamic panels as separate `###`
+# sub-sections under one `##` topic was tried first and silently broke
+# learnr's progressive/allow_skip "Continue" gate between them -- it never
+# unlocked no matter what was submitted, confirmed via the DOM directly
+# (the second `###` stayed a `display: none` `.section.level3.hide` div).
+# Root cause, as best determined: that gate depends on markup present in
+# the static HTML at knit time to recognize a section's exercise as
+# completed, which a bare uiOutput() placeholder doesn't provide regardless
+# of what's later rendered into it. Since this module is ungraded anyway
+# (no reason to force sequential completion), the fix is to not use `###`
+# subheadings for these panels at all -- see the bold-text labels below
+# instead of `###` -- rather than solve gating a fixed-content mechanism
+# was never designed for. Any FUTURE dynamic-UI content stacked under one
+# `##` topic should do the same (flat, no `###`) unless this gets solved.
+#
+# One shared, ungraded practice chat for the whole module (not per-question
+# -- there's no fixed exercise context to hang a separate panel off of).
+wire_standalone_chat("tutor_chat_m7_practice", "tutor_accordion_m7_practice", "Ask for practice help", PRACTICE_SYSTEM_PROMPT, PRACTICE_CHAT_GREETING, input, output, session)
+
+random_exercise_server(input, output, session, "vector_practice", generate_vector_practice)
+random_exercise_server(input, output, session, "formula_practice", generate_formula_practice)
+```
+
+## Module 7: Extra Practice
+
+Everything up to here has been graded, one-shot content -- pass it once and move on. This module is different: it's **ungraded and endlessly repeatable**. Click "New Question" for a fresh version any time, as many times as you want, whenever you want more reps on a skill. Nothing here is tracked or scored -- it's just practice.
+
+```{r, echo=FALSE}
+accordion(
+  id = "tutor_accordion_m7_practice",
+  open = FALSE,
+  accordion_panel(
+    title = "Ask for practice help",
+    chat_ui(
+      "tutor_chat_m7_practice",
+      placeholder = "Ask a question, or paste your current practice question or code...",
+      greeting = PRACTICE_CHAT_GREETING,
+      allow_attachments = FALSE
+    )
+  )
+)
+```
+
+**Practice: vector indexing**
+
+```{r, echo=FALSE}
+random_exercise_ui("vector_practice")
+```
+
+**Practice: formulas**
+
+```{r, echo=FALSE}
+random_exercise_ui("formula_practice")
+```

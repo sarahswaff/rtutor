@@ -370,27 +370,45 @@ This is NOT a graded exercise -- there is no code to check and nothing to avoid 
 
 INSTALL_HELP_CHAT_GREETING <- "Hi! If you're running into trouble installing R or RStudio, tell me what's happening (your operating system and what step you're stuck on) and I'll help you work through it."
 
+PRACTICE_SYSTEM_PROMPT <- "
+You are a patient, encouraging R tutor helping a beginner work through optional, ungraded practice questions in an introductory R course. These questions are randomly generated -- new numbers and a fresh version of the question appear every time the student clicks \"New Question\" -- so there is no fixed answer key you're protecting and no attempt count to escalate against.
+
+Because there's no grading pressure here, you can be more directly helpful than in a graded exercise: if the student is stuck, it's fine to explain the relevant R syntax or concept plainly, including with a small example -- just don't write out the complete, exact line(s) of code needed to solve THEIR current on-screen question, since the point is still for them to write it themselves. Explaining the underlying idea generically (e.g. 'square-bracket indexing pulls one element out of a vector by its position') is encouraged, not something to avoid.
+
+You cannot see the student's screen or which exact question is currently showing (different numbers than whatever they paste to you) -- ask them to paste the question text or their code if you need it to give a specific answer, rather than guessing.
+
+Keep responses short and conversational -- a few sentences at most, unless a concept genuinely needs a worked example to land.
+"
+
+PRACTICE_CHAT_GREETING <- "Hi! This is just for practice, so ask away -- I can be more direct here than in a graded exercise. Paste your current question or code if you want help with something specific."
+
 #' A standalone tutor chat with no exercise/grading context and no DB
 #' logging -- for help that isn't tied to a specific graded exercise (e.g.
-#' installing R/RStudio, which every other tutor chat panel's plumbing
-#' assumes is not the case: wire_tutor_chat() requires a real row in
-#' `exercises` for its DB logging and context-building). Deliberately
-#' simpler than wire_tutor_chat(): no student_id, no exercise_key, no
-#' chat_logs/exercise_attempts writes, no auto-open-on-fail (there's no
-#' "attempt" to fail). A fresh ellmer client is built each time the
-#' accordion panel opens, same refresh-on-open pattern as wire_tutor_chat().
-wire_standalone_chat <- function(chat_id, accordion_id, panel_value, input, output, session) {
+#' installing R/RStudio, or the Extra Practice module's randomly-generated
+#' questions -- both cases every other tutor chat panel's plumbing assumes
+#' isn't true: wire_tutor_chat() requires a real row in `exercises` for its
+#' DB logging and context-building, which neither of these has). Takes its
+#' own `system_prompt`/`greeting` (rather than hardcoding one) so it can be
+#' reused across different non-exercise contexts with different framing --
+#' see INSTALL_HELP_SYSTEM_PROMPT/INSTALL_HELP_CHAT_GREETING and
+#' PRACTICE_SYSTEM_PROMPT/PRACTICE_CHAT_GREETING below for the two current
+#' uses. Deliberately simpler than wire_tutor_chat(): no student_id, no
+#' exercise_key, no chat_logs/exercise_attempts writes, no auto-open-on-fail
+#' (there's no "attempt" to fail). A fresh ellmer client is built each time
+#' the accordion panel opens, same refresh-on-open pattern as
+#' wire_tutor_chat().
+wire_standalone_chat <- function(chat_id, accordion_id, panel_value, system_prompt, greeting, input, output, session) {
   client <- shiny::reactiveVal(NULL)
 
   refresh_chat <- function() {
     tryCatch({
       new_client <- ellmer::chat_anthropic(
         model = "claude-haiku-4-5-20251001",
-        system_prompt = INSTALL_HELP_SYSTEM_PROMPT
+        system_prompt = system_prompt
       )
       client(new_client)
       shinychat::chat_clear(chat_id, session = session)
-      shinychat::chat_set_greeting(chat_id, INSTALL_HELP_CHAT_GREETING, session = session)
+      shinychat::chat_set_greeting(chat_id, greeting, session = session)
     }, error = function(e) {
       message(paste("Starting standalone chat failed:", e$message))
     })
@@ -527,5 +545,87 @@ wire_tutor_chat <- function(exercise_key, chat_id, accordion_id, panel_value, in
         message(paste("Tutor response failed:", conditionMessage(e)))
       }
     )
+  })
+}
+
+#' Ungraded, endlessly-repeatable practice exercise -- for the Extra
+#' Practice module. Unlike exercise_ui()/exercise_server() (fixed starting
+#' code and a grading function closed over fixed, module-level data),
+#' `generate_fn` is a zero-argument function called fresh every time a new
+#' question is requested; it must return list(prompt = "...", starting_code
+#' = "...", check = function(user_code, result, envir) list(passed=,
+#' message=)). Each call should bake its own randomly-generated values
+#' directly into `prompt`/`starting_code` as literal text (e.g.
+#' `sprintf("practice_vec <- c(%s)\n...", paste(sample(1:50, 5), collapse =
+#' ", "))`) and have `check` close over those SAME values -- never write
+#' them into a shared/global variable. This is a deliberate safety
+#' requirement, not just a style choice: this app's other exercises can
+#' safely put fixed reference data in globalenv() (e.g. Module 4's
+#' fish_clean) because it's identical for every student, but a *freshly
+#' randomized* value is per-session -- putting it in globalenv() would mean
+#' one student's "New Question" click overwriting the question another
+#' concurrent student is actively looking at, since globalenv() is shared
+#' across every session in the same R process.
+#'
+#' No exercise_key, no student_id, no chat_logs/exercise_attempts writes --
+#' this is intentionally ungraded and unlogged, same rationale as
+#' wire_standalone_chat() (there's no fixed `exercises` row to log against,
+#' and nothing here needs the instructor dashboard's attention).
+random_exercise_ui <- function(id) {
+  shiny::uiOutput(paste0(id, "_panel"))
+}
+
+random_exercise_server <- function(input, output, session, id, generate_fn) {
+  # A reactiveVal can only be read from inside a reactive consumer (a
+  # render*()/observe()/reactive() block) -- reading it from a plain
+  # function called directly (not itself invoked from inside one of those)
+  # throws "Operation not allowed without an active reactive context".
+  # renderUI() itself IS such a context, so reading question() directly
+  # inside it (rather than in a separate helper called from outside one)
+  # both fixes that and means Shiny automatically re-renders this panel
+  # whenever question() changes -- no manual re-render call needed.
+  question <- shiny::reactiveVal(generate_fn())
+
+  output[[paste0(id, "_panel")]] <- shiny::renderUI({
+    q <- question()
+    n_lines <- length(strsplit(q$starting_code, "\n")[[1]])
+    htmltools::tagList(
+      htmltools::tags$p(q$prompt),
+      shiny::textAreaInput(paste0(id, "_code"), label = "R Code", value = q$starting_code, rows = max(3, n_lines), width = "100%"),
+      shiny::actionButton(paste0(id, "_submit"), "Submit Answer", class = "btn btn-primary btn-sm"),
+      shiny::actionButton(paste0(id, "_new"), "New Question", class = "btn btn-light btn-sm"),
+      shiny::uiOutput(paste0(id, "_feedback"))
+    )
+  })
+
+  shiny::observeEvent(input[[paste0(id, "_new")]], {
+    question(generate_fn())
+    output[[paste0(id, "_feedback")]] <- shiny::renderUI(NULL)
+  })
+
+  shiny::observeEvent(input[[paste0(id, "_submit")]], {
+    user_code <- input[[paste0(id, "_code")]]
+    env <- new.env()
+    result <- tryCatch(eval(parse(text = user_code), envir = env), error = function(e) e)
+    is_error <- inherits(result, "error")
+    eval_result <- if (is_error) {
+      list(passed = FALSE, message = paste("Error:", conditionMessage(result)))
+    } else {
+      question()$check(user_code, result, env)
+    }
+
+    output[[paste0(id, "_feedback")]] <- shiny::renderUI({
+      htmltools::tagList(
+        htmltools::tags$pre(if (is_error) {
+          paste("Error:", conditionMessage(result))
+        } else {
+          paste(utils::capture.output(print(result)), collapse = "\n")
+        }),
+        htmltools::tags$div(
+          class = if (eval_result$passed) "alert alert-success" else "alert alert-danger",
+          eval_result$message
+        )
+      )
+    })
   })
 }

@@ -80,7 +80,7 @@ r-tutor-app/
   computed live from exercise_attempts. Dashboard mastery queries should read from this view,
   never a hand-maintained status column.
 
-## Curriculum (6 modules, finalized -- do not reorganize without reason)
+## Curriculum (7 modules, finalized -- do not reorganize without reason)
 1. **Introduction** -- install R/RStudio, panes, working directory. DONE, but see "Current
    status" below -- the install section was substantively rewritten from a passive fact-list
    into an actual guided step-by-step walkthrough and hasn't been re-verified live in a
@@ -106,6 +106,12 @@ r-tutor-app/
    status" below). Deliberately does NOT involve building a model -- that's still out of
    scope for the tutorial itself (see below). DONE -- 2 graded exercises (compute RMSE;
    decide which of two models wins), each with its own tutor chat.
+7. **Extra Practice** -- ungraded, endlessly-repeatable practice questions (see "Current
+   status" below for the mechanism). NOT part of the graded curriculum sequence -- no
+   `exercises` rows, no `exercise_attempts`/`chat_logs` logging, and deliberately not gated
+   behind `progressive`/`allow_skip` (see the gotcha noted where it's built, in
+   `tutorials/course.Rmd` just above `## Module 7: Extra Practice`). One shared, always-on
+   tutor chat for the whole module (not per-question).
 
 A capstone pipeline assessment exists but is explicitly OUT of scope for the tutorial itself
 -- Module 6 teaches the vocabulary to interpret one's output, not how to build one. A
@@ -913,9 +919,50 @@ future module:
     needs visuals, `pilot_testing/checkpoints_and_feedback.md` now directly asks testers
     whether a screenshot/clip would have helped and where -- so the decision to invest in
     capturing/embedding media is based on real pilot signal, not assumption.
-11. Remaining:
+11. DONE: added Module 7, "Extra Practice" -- ungraded, endlessly repeatable practice
+    questions, added because the app owner wanted a low-stakes way to get more reps on a
+    skill without waiting for a new module. Two question generators to start (vector
+    indexing; formula translation, picking randomly among 3 formula templates each time),
+    each producing genuinely different random values/wording every time via a
+    `generate_fn()` contract -- see `random_exercise_ui()`/`random_exercise_server()` in
+    `R/tutor_utils.R`. Deliberately ungraded and unlogged (no `exercises` row, no
+    `exercise_attempts`/`chat_logs` writes) -- same rationale as the install-help chat's
+    `wire_standalone_chat()`, which this reuses (generalized to take its own
+    `system_prompt`/`greeting` instead of a hardcoded one, so the same function now serves
+    both the install-help chat and this module's practice chat).
+    **Two real bugs caught and fixed while building this:**
+    - `random_exercise_server()`'s first version called `question()` (a `reactiveVal`) from
+      a plain helper function invoked both at setup and inside `observeEvent()` -- reading a
+      reactiveVal only works from inside an actual reactive consumer (`render*()`/
+      `observe()`/`reactive()`), so this threw "Operation not allowed without an active
+      reactive context" every time, confirmed in the server console. Fixed by moving the
+      read inside `renderUI({...})` itself, which is a valid reactive context and means
+      Shiny auto-reruns it whenever `question()` changes -- no manual re-render call needed.
+    - Stacking the two practice panels as separate `###` sub-sections under one `##` topic
+      broke learnr's `progressive`/`allow_skip` "Continue" gate between them -- it never
+      unlocked, confirmed via the DOM (`display: none`, class `section level3 hide`) no
+      matter what was submitted. Root cause, as best determined: `random_exercise_ui()`'s
+      panels are entirely dynamic (a bare `uiOutput()` filled in later by `renderUI()`),
+      unlike every other exercise/quiz in this app which emit fully static HTML at knit
+      time -- the progressive gate appears to depend on markup present in the static HTML to
+      recognize a section's exercise as completed, which a bare placeholder can't provide
+      regardless of what's later rendered into it. Since this module is ungraded anyway
+      (no reason to force sequential completion), fixed by not using `###` subheadings for
+      these panels at all (bold text instead) rather than solving progressive-gating for a
+      mechanism it was never designed for. **Any future dynamic-`uiOutput()` content stacked
+      under one `##` topic should do the same** -- see the comment in `course.Rmd` right
+      above `## Module 7: Extra Practice` for the full writeup.
+    Tested locally: both panels render together (no gate), "New Question" regenerates
+    different values/templates each click, fail and pass paths confirmed for both question
+    types, and the shared practice chat panel opens with its distinct greeting. Same caveat
+    as items 6/8: an actual AI reply in that chat could not be confirmed via automated
+    browser testing.
+12. Remaining:
    - Actually run the pilot (send `pilot_testing/` materials to real testers).
    - Get real instructor usage on the dashboard's tabs to see if they actually answer the
      day-to-day questions, or need adjusting.
    - Run `Rscript R/classify_chat_messages.R` periodically (by hand, or set up on a
      schedule) so the "Chats" tab's categories stay fresh as new conversations happen.
+   - Only 2 Extra Practice question generators exist so far (vector indexing; formulas) --
+     more can be added later following the same `generate_fn()` contract in
+     `R/tutor_utils.R`.

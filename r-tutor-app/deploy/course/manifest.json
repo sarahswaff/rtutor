@@ -2898,13 +2898,13 @@
   },
   "files": {
     "course.Rmd": {
-      "checksum": "597f90c3deb539c1ff5f139763f1249b"
+      "checksum": "6d092a723d9b524a5b3aa8017b155f80"
     },
     "R/db_utils.R": {
       "checksum": "89890e55b7fb67fb757bb8ae56d836d5"
     },
     "R/tutor_utils.R": {
-      "checksum": "4d98c1281d14b3b5a16396b8629645f1"
+      "checksum": "312749454b2e1f05d0cfb25c0128d174"
     }
   },
   "users": null
