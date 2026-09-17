@@ -963,12 +963,49 @@ future module:
     types, and the shared practice chat panel opens with its distinct greeting. Same caveat
     as items 6/8: an actual AI reply in that chat could not be confirmed via automated
     browser testing.
-12. Remaining:
+12. **REVISED (superseding item 11's two-fixed-panel layout) into a BETA module-picker
+    design**, after the app owner clarified what they actually wanted: not two separate
+    fixed boxes, but pick a module (2-6) and get a random question drawn from what THAT
+    module taught -- including question types not tied to any of that module's actual
+    graded exercises, once more variety is added (explicitly deferred to a later pass; this
+    beta has exactly one generator per module, chosen to mirror content that module already
+    teaches, to keep the beta itself simple to reason about and test).
+    - `random_exercise_ui()`/`random_exercise_server()` were replaced outright (not kept
+      alongside) with `module_practice_ui()`/`module_practice_server()` in
+      `R/tutor_utils.R` -- a `radioButtons()` module picker plus ONE dynamic panel, backed
+      by `generators_by_module` (a named list keyed by module number as a string, e.g.
+      `"3"`, each value `list(generate_fn = ..., has_plot_output = TRUE/FALSE)`). Switching
+      modules or clicking "New Question" both regenerate via the currently-selected
+      module's `generate_fn()`. Also added `has_plot_output` support (mirroring
+      `exercise_ui()`/`exercise_server()`'s same argument) since Module 5's practice
+      question needed it -- the first random-practice question to produce a plot.
+    - Five generators, one per module: Module 2 = comment out a random line (mirrors its
+      `module2_comment_out` exercise); Module 3 = vector indexing (unchanged from item 11,
+      just renamed `generate_module3_practice`); Module 4 = `filter()` + `summarize(sum(...))`
+      on a small randomly-generated fruit/count table; Module 5 = scatter plot of a random
+      `practice_df` (`geom_point()`, checked the same structural way Module 5's own
+      `scatter_exercise` is); Module 6 = compute RMSE from random `practice_actual`/
+      `practice_predicted` vectors. The old `generate_formula_practice()` (3 formula
+      templates) was deleted rather than kept dangling unused -- formula-style practice can
+      return under Module 3 or 6's pool once the "add types beyond what each module already
+      grades" pass happens.
+    - Tested locally end-to-end: all five modules produce a correct, on-topic question;
+      fail and pass paths confirmed for Module 2 (comment-out), Module 4 (dplyr), and
+      Module 6 (RMSE); Module 5's plot renders and its structural check passes; switching
+      modules and clicking "New Question" both regenerate fresh values every time. Practice
+      chat re-verified opening correctly (same automated-reply-testing caveat as before).
+13. Remaining:
    - Actually run the pilot (send `pilot_testing/` materials to real testers).
    - Get real instructor usage on the dashboard's tabs to see if they actually answer the
      day-to-day questions, or need adjusting.
    - Run `Rscript R/classify_chat_messages.R` periodically (by hand, or set up on a
      schedule) so the "Chats" tab's categories stay fresh as new conversations happen.
-   - Only 2 Extra Practice question generators exist so far (vector indexing; formulas) --
-     more can be added later following the same `generate_fn()` contract in
-     `R/tutor_utils.R`.
+   - After beta feedback: add more question generators per module, INCLUDING types not
+     tied to that module's own graded exercises (explicit direction from the app owner --
+     practice should draw on everything a module taught, not just repeat its exercise
+     shapes). Also add a sentence at the end of each module (its "Wrapping up," most
+     likely) pointing to Module 7 and noting that its practice includes code-practice types
+     beyond what that module's own graded exercises covered -- deliberately deferred until
+     after the beta/that expansion, so the sentence describes what's actually there.
+   - Get real pilot feedback on the beta itself before expanding it -- do the 5 module
+     choices and one-question-per-module scope feel right, or does it need adjusting first?

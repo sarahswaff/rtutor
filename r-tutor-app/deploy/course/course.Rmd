@@ -2578,17 +2578,52 @@ That covers the basics of judging model output -- none of it required building a
 That's exactly what the capstone preview coming up asks you to do: a real script fits two models to real fish data and prints their RMSE, and your job is to read that output and decide what it's telling you.
 
 ```{r setup-module7, context="setup", include=FALSE}
-# Question generators for the Extra Practice module. Each is a zero-argument
-# function, called fresh every time a new question is requested, returning
-# list(prompt=, starting_code=, check=). See random_exercise_ui()/
-# random_exercise_server() in R/tutor_utils.R for the full contract --
-# in particular, why the random values below are baked directly into
+# Question generators for the Extra Practice module, one per module (2-6)
+# for this BETA version -- one question type per module, deliberately
+# mirroring content that module already teaches. A later pass (after beta
+# feedback) will add MORE generators per module, including types not tied
+# to any of that module's actual graded exercises, per the app owner's
+# explicit direction: practice questions should draw on everything a
+# module taught, not just repeat its existing exercise shapes.
+#
+# Each generator is a zero-argument function, called fresh every time a new
+# question is requested (a module switch or a "New Question" click),
+# returning list(prompt=, starting_code=, check=). See module_practice_ui()/
+# module_practice_server() in R/tutor_utils.R for the full contract -- in
+# particular, why the random values below are baked directly into
 # `prompt`/`starting_code` as literal text rather than stored in a shared
 # variable: this data is per-question, not identical across every student's
 # session the way e.g. Module 4's fish_clean is, so it can't safely live in
 # globalenv() the way that reference data does.
 
-generate_vector_practice <- function() {
+generate_module2_practice <- function() {
+  keep_msg <- sample(c("Keep this one running", "Do not touch this line", "This line should stay active"), 1)
+  comment_msg <- sample(c("Turn this into a comment", "This line should not run", "Comment this one out"), 1)
+
+  list(
+    prompt = sprintf('Below, comment out the SECOND line only (the one that says "%s"), so it does not run -- without deleting it or changing the first line.', comment_msg),
+    starting_code = sprintf('print("%s")\nprint("%s")', keep_msg, comment_msg),
+    check = function(user_code, result, envir) {
+      keep_active <- grepl(paste0('(?m)^\\s*print\\("', keep_msg, '"\\)\\s*$'), user_code, perl = TRUE)
+      comment_present <- grepl(paste0('(?m)^\\s*#.*', comment_msg), user_code, perl = TRUE)
+      comment_still_active <- grepl(paste0('(?m)^\\s*print\\("', comment_msg, '"\\)\\s*$'), user_code, perl = TRUE)
+      passed <- keep_active && comment_present && !comment_still_active
+
+      message <- if (passed) {
+        "Correct -- the first line still runs, and the second is safely commented out."
+      } else if (!keep_active) {
+        "The first line got changed or removed -- it should stay exactly as it was."
+      } else if (comment_still_active) {
+        "The second line is still active R code -- put a # in front of it to comment it out."
+      } else {
+        "Add a # before the second line to comment it out."
+      }
+      list(passed = passed, message = message)
+    }
+  )
+}
+
+generate_module3_practice <- function() {
   n <- sample(4:7, 1)
   values <- sample(1:50, n)
   idx <- sample(seq_len(n), 1)
@@ -2618,92 +2653,148 @@ generate_vector_practice <- function() {
   )
 }
 
-generate_formula_practice <- function() {
-  templates <- list(
-    function() {
-      l <- sample(2:20, 1)
-      w <- sample(2:20, 1)
-      correct <- l * w
-      list(
-        prompt = sprintf("The area of a rectangle is A = l x w. If l = %d and w = %d, write code that computes A.", l, w),
-        starting_code = sprintf("l <- %d\nw <- %d\nFIXME", l, w),
-        check = function(user_code, result, envir) {
-          passed <- is.numeric(result) && length(result) == 1 && isTRUE(result == correct)
-          list(passed = passed, message = if (passed) sprintf("Correct -- the area is %d.", correct) else "Not quite -- check the formula A = l * w.")
-        }
-      )
-    },
-    function() {
-      a <- sample(3:15, 1)
-      b <- sample(3:15, 1)
-      correct <- sqrt(a^2 + b^2)
-      list(
-        prompt = sprintf("Using the Pythagorean theorem c = sqrt(a^2 + b^2), with a = %d and b = %d, write code that computes c.", a, b),
-        starting_code = sprintf("a <- %d\nb <- %d\nFIXME", a, b),
-        check = function(user_code, result, envir) {
-          uses_sqrt <- grepl("sqrt\\s*\\(", user_code)
-          correct_result <- is.numeric(result) && length(result) == 1 && isTRUE(all.equal(result, correct, tolerance = 0.001))
-          passed <- uses_sqrt && correct_result
-          message <- if (passed) {
-            sprintf("Correct -- c is about %.2f.", correct)
-          } else if (!uses_sqrt) {
-            "Don't forget the square root -- this formula needs sqrt()."
-          } else {
-            "Not quite -- check that both a and b are squared before adding them."
-          }
-          list(passed = passed, message = message)
-        }
-      )
-    },
-    function() {
-      celsius <- sample(-10:40, 1)
-      correct <- celsius * 9 / 5 + 32
-      list(
-        prompt = sprintf("Using F = C x 9/5 + 32, with C = %d, write code that computes F.", celsius),
-        starting_code = sprintf("celsius <- %d\nFIXME", celsius),
-        check = function(user_code, result, envir) {
-          passed <- is.numeric(result) && length(result) == 1 && isTRUE(all.equal(result, correct, tolerance = 0.01))
-          list(passed = passed, message = if (passed) sprintf("Correct -- that's %.1f°F.", correct) else "Not quite -- check the formula F = C * 9/5 + 32.")
-        }
-      )
+generate_module4_practice <- function() {
+  fruits <- sample(c("apple", "banana", "cherry", "date", "elderberry"), sample(3:4, 1))
+  n <- length(fruits) * 2
+  fruit_col <- sample(fruits, n, replace = TRUE)
+  count_col <- sample(5:40, n)
+  target_fruit <- sample(fruits, 1)
+  correct <- sum(count_col[fruit_col == target_fruit])
+  fruit_str <- paste(sprintf('"%s"', fruit_col), collapse = ", ")
+  count_str <- paste(count_col, collapse = ", ")
+
+  list(
+    prompt = sprintf(
+      'practice_df has a fruit column and a count column. Using dplyr, filter down to just "%s" and compute the total (sum) of count.',
+      target_fruit
+    ),
+    starting_code = sprintf(
+      'practice_df <- data.frame(fruit = c(%s), count = c(%s))\npractice_df |>\n  filter(fruit == FIXME) |>\n  summarize(total = sum(count))',
+      fruit_str, count_str
+    ),
+    check = function(user_code, result, envir) {
+      uses_filter <- grepl("filter\\s*\\(", user_code)
+      is_df <- is.data.frame(result) && "total" %in% names(result)
+      correct_result <- is_df && isTRUE(all.equal(result$total, correct))
+      passed <- uses_filter && correct_result
+
+      message <- if (passed) {
+        sprintf("Correct -- the total count for %s is %d.", target_fruit, correct)
+      } else if (!uses_filter) {
+        sprintf('Use filter(fruit == "%s") to keep just those rows first.', target_fruit)
+      } else if (!is_df) {
+        "This should end up as a summarized table with a total column -- check the summarize() step."
+      } else {
+        sprintf('Not quite -- double check the filter is matching "%s" exactly.', target_fruit)
+      }
+      list(passed = passed, message = message)
     }
   )
-  templates[[sample(seq_along(templates), 1)]]()
 }
+
+generate_module5_practice <- function() {
+  n <- sample(15:25, 1)
+  x_vals <- round(runif(n, 1, 50), 1)
+  y_vals <- round(x_vals * runif(1, 0.5, 2) + rnorm(n, sd = 5), 1)
+  x_str <- paste(x_vals, collapse = ", ")
+  y_str <- paste(y_vals, collapse = ", ")
+
+  list(
+    prompt = "practice_df has columns x and y. Create a scatter plot with x on the x-axis and y on the y-axis.",
+    starting_code = sprintf(
+      "practice_df <- data.frame(x = c(%s), y = c(%s))\nggplot(practice_df, aes(x = FIXME, y = FIXME)) +\n  geom_point()",
+      x_str, y_str
+    ),
+    check = function(user_code, result, envir) {
+      uses_geom_point <- grepl("geom_point\\s*\\(", user_code)
+      is_ggplot <- inherits(result, "ggplot")
+      has_point_layer <- is_ggplot && any(vapply(result$layers, function(l) inherits(l$geom, "GeomPoint"), logical(1)))
+      x_ok <- is_ggplot && identical(rlang::as_label(result$mapping$x), "x")
+      y_ok <- is_ggplot && identical(rlang::as_label(result$mapping$y), "y")
+      passed <- uses_geom_point && is_ggplot && has_point_layer && x_ok && y_ok
+
+      message <- if (passed) {
+        "Correct -- that's a scatter plot of x vs. y."
+      } else if (!is_ggplot) {
+        "This should produce a ggplot object -- make sure ggplot(practice_df, aes(...)) still starts the expression."
+      } else if (!has_point_layer) {
+        "This needs a geom_point() layer to draw the scatter plot."
+      } else if (!x_ok) {
+        "The x-axis isn't mapped to x yet -- check aes()'s x argument."
+      } else {
+        "Close -- the y-axis isn't mapped to y yet, check aes()'s y argument."
+      }
+      list(passed = passed, message = message)
+    }
+  )
+}
+
+generate_module6_practice <- function() {
+  n <- sample(4:6, 1)
+  actual <- sample(20:200, n)
+  predicted <- actual + sample(-15:15, n, replace = TRUE)
+  correct <- sqrt(mean((actual - predicted)^2))
+  actual_str <- paste(actual, collapse = ", ")
+  predicted_str <- paste(predicted, collapse = ", ")
+
+  list(
+    prompt = "practice_actual and practice_predicted are a model's actual and predicted values for the same cases. Compute the RMSE.",
+    starting_code = sprintf(
+      "practice_actual <- c(%s)\npractice_predicted <- c(%s)\nsqrt(mean((practice_actual - practice_predicted)^FIXME))",
+      actual_str, predicted_str
+    ),
+    check = function(user_code, result, envir) {
+      correct_result <- is.numeric(result) && length(result) == 1 && isTRUE(all.equal(as.numeric(result), correct, tolerance = 0.01))
+      message <- if (correct_result) {
+        sprintf("Correct -- RMSE is about %.2f.", correct)
+      } else {
+        "Not quite -- check the RMSE formula: square the differences, average them, then take the square root."
+      }
+      list(passed = correct_result, message = message)
+    }
+  )
+}
+
+MODULE_PRACTICE_GENERATORS <- list(
+  "2" = list(generate_fn = generate_module2_practice, has_plot_output = FALSE),
+  "3" = list(generate_fn = generate_module3_practice, has_plot_output = FALSE),
+  "4" = list(generate_fn = generate_module4_practice, has_plot_output = FALSE),
+  "5" = list(generate_fn = generate_module5_practice, has_plot_output = TRUE),
+  "6" = list(generate_fn = generate_module6_practice, has_plot_output = FALSE)
+)
 ```
 
 ```{r, context="server"}
 # --- Practice chat + exercise wiring --------------------------------------
-# NEW GOTCHA, found building this module: random_exercise_ui()'s panels are
+# NEW GOTCHA, found building this module: module_practice_ui()'s panel is
 # entirely dynamic (a bare uiOutput(), filled in by renderUI() after the
 # session starts) -- unlike every other exercise/quiz in this app, which
 # emit fully static HTML at knit time (only their small feedback area is a
-# uiOutput()). Stacking two of these dynamic panels as separate `###`
-# sub-sections under one `##` topic was tried first and silently broke
-# learnr's progressive/allow_skip "Continue" gate between them -- it never
-# unlocked no matter what was submitted, confirmed via the DOM directly
-# (the second `###` stayed a `display: none` `.section.level3.hide` div).
-# Root cause, as best determined: that gate depends on markup present in
-# the static HTML at knit time to recognize a section's exercise as
-# completed, which a bare uiOutput() placeholder doesn't provide regardless
-# of what's later rendered into it. Since this module is ungraded anyway
-# (no reason to force sequential completion), the fix is to not use `###`
-# subheadings for these panels at all -- see the bold-text labels below
-# instead of `###` -- rather than solve gating a fixed-content mechanism
-# was never designed for. Any FUTURE dynamic-UI content stacked under one
-# `##` topic should do the same (flat, no `###`) unless this gets solved.
+# uiOutput()). An earlier version of this module stacked two such dynamic
+# panels as separate `###` sub-sections under one `##` topic, which
+# silently broke learnr's progressive/allow_skip "Continue" gate between
+# them -- it never unlocked no matter what was submitted, confirmed via the
+# DOM directly (the locked `###` stayed a `display: none`
+# `.section.level3.hide` div). Root cause, as best determined: that gate
+# depends on markup present in the static HTML at knit time to recognize a
+# section's exercise as completed, which a bare uiOutput() placeholder
+# doesn't provide regardless of what's later rendered into it. Since this
+# module is ungraded anyway (no reason to force sequential completion), the
+# fix is to not use `###` subheadings for this content at all -- see the
+# bold-text label below instead of `###`. Any FUTURE dynamic-UI content
+# stacked under one `##` topic should do the same (flat, no `###`) unless
+# this gets solved.
 #
 # One shared, ungraded practice chat for the whole module (not per-question
 # -- there's no fixed exercise context to hang a separate panel off of).
 wire_standalone_chat("tutor_chat_m7_practice", "tutor_accordion_m7_practice", "Ask for practice help", PRACTICE_SYSTEM_PROMPT, PRACTICE_CHAT_GREETING, input, output, session)
 
-random_exercise_server(input, output, session, "vector_practice", generate_vector_practice)
-random_exercise_server(input, output, session, "formula_practice", generate_formula_practice)
+module_practice_server(input, output, session, "module_practice", MODULE_PRACTICE_GENERATORS)
 ```
 
 ## Module 7: Extra Practice
 
-Everything up to here has been graded, one-shot content -- pass it once and move on. This module is different: it's **ungraded and endlessly repeatable**. Click "New Question" for a fresh version any time, as many times as you want, whenever you want more reps on a skill. Nothing here is tracked or scored -- it's just practice.
+Everything up to here has been graded, one-shot content -- pass it once and move on. This module is different: it's **ungraded and endlessly repeatable**. Pick a module below and click "New Question" for a fresh version any time, as many times as you want, whenever you want more reps on a skill. Nothing here is tracked or scored -- it's just practice.
 
 ```{r, echo=FALSE}
 accordion(
@@ -2721,14 +2812,8 @@ accordion(
 )
 ```
 
-**Practice: vector indexing**
-
 ```{r, echo=FALSE}
-random_exercise_ui("vector_practice")
-```
-
-**Practice: formulas**
-
-```{r, echo=FALSE}
-random_exercise_ui("formula_practice")
+module_practice_ui("module_practice", c(
+  "Module 2" = "2", "Module 3" = "3", "Module 4" = "4", "Module 5" = "5", "Module 6" = "6"
+))
 ```

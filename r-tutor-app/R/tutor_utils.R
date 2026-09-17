@@ -548,12 +548,14 @@ wire_tutor_chat <- function(exercise_key, chat_id, accordion_id, panel_value, in
   })
 }
 
-#' Ungraded, endlessly-repeatable practice exercise -- for the Extra
-#' Practice module. Unlike exercise_ui()/exercise_server() (fixed starting
-#' code and a grading function closed over fixed, module-level data),
-#' `generate_fn` is a zero-argument function called fresh every time a new
-#' question is requested; it must return list(prompt = "...", starting_code
-#' = "...", check = function(user_code, result, envir) list(passed=,
+#' Ungraded, endlessly-repeatable practice with a module picker -- for the
+#' Extra Practice module. The student picks which module (2-6) to practice;
+#' `generators_by_module` is a named list keyed by module number as a
+#' string (e.g. "3"), each value itself a list(generate_fn = ...,
+#' has_plot_output = TRUE/FALSE). `generate_fn` is a zero-argument function,
+#' called fresh every time a new question is requested (a module switch or
+#' a "New Question" click), returning list(prompt = "...", starting_code =
+#' "...", check = function(user_code, result, envir) list(passed=,
 #' message=)). Each call should bake its own randomly-generated values
 #' directly into `prompt`/`starting_code` as literal text (e.g.
 #' `sprintf("practice_vec <- c(%s)\n...", paste(sample(1:50, 5), collapse =
@@ -566,44 +568,58 @@ wire_tutor_chat <- function(exercise_key, chat_id, accordion_id, panel_value, in
 #' one student's "New Question" click overwriting the question another
 #' concurrent student is actively looking at, since globalenv() is shared
 #' across every session in the same R process.
+#' `has_plot_output = TRUE` mirrors exercise_ui()/exercise_server()'s same
+#' argument -- adds a plotOutput() area and renders a ggplot result there
+#' instead of trying to print() it as text.
 #'
 #' No exercise_key, no student_id, no chat_logs/exercise_attempts writes --
 #' this is intentionally ungraded and unlogged, same rationale as
 #' wire_standalone_chat() (there's no fixed `exercises` row to log against,
 #' and nothing here needs the instructor dashboard's attention).
-random_exercise_ui <- function(id) {
-  shiny::uiOutput(paste0(id, "_panel"))
+module_practice_ui <- function(id, module_choices) {
+  htmltools::tagList(
+    shiny::radioButtons(paste0(id, "_module"), label = "Choose a module to practice:", choices = module_choices, inline = TRUE),
+    shiny::uiOutput(paste0(id, "_panel"))
+  )
 }
 
-random_exercise_server <- function(input, output, session, id, generate_fn) {
+module_practice_server <- function(input, output, session, id, generators_by_module) {
+  current_generator <- function() {
+    generators_by_module[[input[[paste0(id, "_module")]]]]
+  }
+
   # A reactiveVal can only be read from inside a reactive consumer (a
-  # render*()/observe()/reactive() block) -- reading it from a plain
-  # function called directly (not itself invoked from inside one of those)
-  # throws "Operation not allowed without an active reactive context".
-  # renderUI() itself IS such a context, so reading question() directly
-  # inside it (rather than in a separate helper called from outside one)
-  # both fixes that and means Shiny automatically re-renders this panel
-  # whenever question() changes -- no manual re-render call needed.
-  question <- shiny::reactiveVal(generate_fn())
+  # render*()/observe()/reactive() block) -- see the note this replaced in
+  # this file's history for the exact error that produces otherwise.
+  question <- shiny::reactiveVal(NULL)
+
+  shiny::observeEvent(input[[paste0(id, "_module")]], {
+    question(current_generator()$generate_fn())
+    output[[paste0(id, "_feedback")]] <- shiny::renderUI(NULL)
+  }, ignoreNULL = FALSE)
+
+  shiny::observeEvent(input[[paste0(id, "_new")]], {
+    question(current_generator()$generate_fn())
+    output[[paste0(id, "_feedback")]] <- shiny::renderUI(NULL)
+  })
 
   output[[paste0(id, "_panel")]] <- shiny::renderUI({
+    shiny::req(question())
     q <- question()
+    has_plot <- isTRUE(current_generator()$has_plot_output)
     n_lines <- length(strsplit(q$starting_code, "\n")[[1]])
     htmltools::tagList(
       htmltools::tags$p(q$prompt),
       shiny::textAreaInput(paste0(id, "_code"), label = "R Code", value = q$starting_code, rows = max(3, n_lines), width = "100%"),
       shiny::actionButton(paste0(id, "_submit"), "Submit Answer", class = "btn btn-primary btn-sm"),
       shiny::actionButton(paste0(id, "_new"), "New Question", class = "btn btn-light btn-sm"),
+      if (has_plot) shiny::plotOutput(paste0(id, "_plot"), height = "300px"),
       shiny::uiOutput(paste0(id, "_feedback"))
     )
   })
 
-  shiny::observeEvent(input[[paste0(id, "_new")]], {
-    question(generate_fn())
-    output[[paste0(id, "_feedback")]] <- shiny::renderUI(NULL)
-  })
-
   shiny::observeEvent(input[[paste0(id, "_submit")]], {
+    has_plot <- isTRUE(current_generator()$has_plot_output)
     user_code <- input[[paste0(id, "_code")]]
     env <- new.env()
     result <- tryCatch(eval(parse(text = user_code), envir = env), error = function(e) e)
@@ -614,13 +630,20 @@ random_exercise_server <- function(input, output, session, id, generate_fn) {
       question()$check(user_code, result, env)
     }
 
+    is_plot <- has_plot && !is_error && inherits(result, "ggplot")
+    if (has_plot) {
+      output[[paste0(id, "_plot")]] <- shiny::renderPlot(if (is_plot) result else NULL)
+    }
+
     output[[paste0(id, "_feedback")]] <- shiny::renderUI({
       htmltools::tagList(
-        htmltools::tags$pre(if (is_error) {
-          paste("Error:", conditionMessage(result))
-        } else {
-          paste(utils::capture.output(print(result)), collapse = "\n")
-        }),
+        if (!is_plot) {
+          htmltools::tags$pre(if (is_error) {
+            paste("Error:", conditionMessage(result))
+          } else {
+            paste(utils::capture.output(print(result)), collapse = "\n")
+          })
+        },
         htmltools::tags$div(
           class = if (eval_result$passed) "alert alert-success" else "alert alert-danger",
           eval_result$message
