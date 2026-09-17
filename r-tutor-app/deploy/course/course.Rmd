@@ -2624,6 +2624,11 @@ generate_module2_practice <- function() {
 }
 
 generate_module3_practice <- function() {
+  # Difficulty lever used here: no FIXME -- the code box starts with just
+  # the vector itself, and the student writes the whole indexing
+  # expression from scratch. (See the app owner's explicit direction that
+  # difficulty should vary across questions -- some keep a FIXME, some
+  # don't, some combine skills, some just use bigger/messier inputs.)
   n <- sample(4:7, 1)
   values <- sample(1:50, n)
   idx <- sample(seq_len(n), 1)
@@ -2632,19 +2637,22 @@ generate_module3_practice <- function() {
 
   list(
     prompt = sprintf(
-      "Given practice_vec <- c(%s), write code that returns the value at position %d.",
+      "Given practice_vec <- c(%s), write your own code below that returns the value at position %d. (No FIXME this time -- write the whole line yourself.)",
       value_str, idx
     ),
-    starting_code = sprintf("practice_vec <- c(%s)\npractice_vec[FIXME]", value_str),
+    starting_code = sprintf("practice_vec <- c(%s)\n", value_str),
     check = function(user_code, result, envir) {
+      uses_vec <- grepl("practice_vec", user_code)
       uses_index <- grepl("\\[", user_code)
       correct_result <- is.numeric(result) && length(result) == 1 && isTRUE(result == correct)
-      passed <- uses_index && correct_result
+      passed <- uses_vec && uses_index && correct_result
 
       message <- if (passed) {
         sprintf("Correct -- position %d is %d.", idx, correct)
+      } else if (!uses_vec) {
+        "This should be computed from practice_vec directly, not a typed-in number."
       } else if (!uses_index) {
-        "Use square brackets (like practice_vec[FIXME]) to index into the vector."
+        "Use square brackets to index into the vector, like practice_vec[...]."
       } else {
         sprintf("Not quite -- double check you're asking for position %d specifically.", idx)
       }
@@ -2654,38 +2662,59 @@ generate_module3_practice <- function() {
 }
 
 generate_module4_practice <- function() {
-  fruits <- sample(c("apple", "banana", "cherry", "date", "elderberry"), sample(3:4, 1))
-  n <- length(fruits) * 2
+  # Difficulty lever used here: combine multiple skills, no FIXME -- a
+  # full cumulative pipeline (filter, group_by, summarize, arrange -- all
+  # four, like Module 4's own cumulative exercise), on a bigger table with
+  # an extra column.
+  fruits <- c("apple", "banana", "cherry", "date", "elderberry")
+  stores <- c("Downtown", "Uptown", "Eastside")
+  exclude_fruit <- sample(fruits, 1)
+  n <- sample(10:14, 1)
   fruit_col <- sample(fruits, n, replace = TRUE)
+  store_col <- sample(stores, n, replace = TRUE)
   count_col <- sample(5:40, n)
-  target_fruit <- sample(fruits, 1)
-  correct <- sum(count_col[fruit_col == target_fruit])
+
+  df <- data.frame(fruit = fruit_col, store = store_col, count = count_col, stringsAsFactors = FALSE)
+  correct <- df |>
+    filter(fruit != exclude_fruit) |>
+    group_by(store) |>
+    summarize(total = sum(count), .groups = "drop") |>
+    arrange(desc(total))
+
   fruit_str <- paste(sprintf('"%s"', fruit_col), collapse = ", ")
+  store_str <- paste(sprintf('"%s"', store_col), collapse = ", ")
   count_str <- paste(count_col, collapse = ", ")
 
   list(
     prompt = sprintf(
-      'practice_df has a fruit column and a count column. Using dplyr, filter down to just "%s" and compute the total (sum) of count.',
-      target_fruit
+      'practice_df has fruit, store, and count columns. Filter OUT all "%s" rows, then group what remains by store, compute the total (sum) count per store, and sort from highest total to lowest. (No FIXME -- write the full pipeline yourself, using filter(), group_by(), summarize(), and arrange().)',
+      exclude_fruit
     ),
     starting_code = sprintf(
-      'practice_df <- data.frame(fruit = c(%s), count = c(%s))\npractice_df |>\n  filter(fruit == FIXME) |>\n  summarize(total = sum(count))',
-      fruit_str, count_str
+      "practice_df <- data.frame(fruit = c(%s), store = c(%s), count = c(%s))\n",
+      fruit_str, store_str, count_str
     ),
     check = function(user_code, result, envir) {
       uses_filter <- grepl("filter\\s*\\(", user_code)
+      uses_group_by <- grepl("group_by\\s*\\(", user_code)
+      uses_summarize <- grepl("summari[sz]e\\s*\\(", user_code)
+      uses_arrange <- grepl("arrange\\s*\\(", user_code)
       is_df <- is.data.frame(result) && "total" %in% names(result)
-      correct_result <- is_df && isTRUE(all.equal(result$total, correct))
-      passed <- uses_filter && correct_result
+      order_ok <- is_df && nrow(result) == nrow(correct) && isTRUE(all.equal(result$total, correct$total))
+      passed <- uses_filter && uses_group_by && uses_summarize && uses_arrange && order_ok
 
       message <- if (passed) {
-        sprintf("Correct -- the total count for %s is %d.", target_fruit, correct)
+        "Correct -- filtered, grouped, summed, and sorted correctly."
       } else if (!uses_filter) {
-        sprintf('Use filter(fruit == "%s") to keep just those rows first.', target_fruit)
-      } else if (!is_df) {
-        "This should end up as a summarized table with a total column -- check the summarize() step."
+        sprintf('Start with filter() to remove the "%s" rows.', exclude_fruit)
+      } else if (!uses_group_by) {
+        "Add a group_by(store) step next."
+      } else if (!uses_summarize) {
+        "Use summarize() to compute the total (sum) count per store."
+      } else if (!is_df || !order_ok) {
+        "Close, but the totals or the order aren't quite right yet -- check the filter/sum, then arrange(desc(...))."
       } else {
-        sprintf('Not quite -- double check the filter is matching "%s" exactly.', target_fruit)
+        "Not quite -- double check each step of the pipeline."
       }
       list(passed = passed, message = message)
     }
@@ -2693,36 +2722,55 @@ generate_module4_practice <- function() {
 }
 
 generate_module5_practice <- function() {
-  n <- sample(15:25, 1)
+  # Difficulty lever used here: combine multiple skills, no FIXME -- a
+  # cumulative pipeline like Module 5's own (filter + plot + title), with
+  # an added category column to filter on.
+  categories <- c("A", "B", "C")
+  n <- sample(24:36, 1)
+  cat_col <- sample(categories, n, replace = TRUE)
   x_vals <- round(runif(n, 1, 50), 1)
   y_vals <- round(x_vals * runif(1, 0.5, 2) + rnorm(n, sd = 5), 1)
+  target_cat <- sample(categories, 1)
+
+  cat_str <- paste(sprintf('"%s"', cat_col), collapse = ", ")
   x_str <- paste(x_vals, collapse = ", ")
   y_str <- paste(y_vals, collapse = ", ")
 
   list(
-    prompt = "practice_df has columns x and y. Create a scatter plot with x on the x-axis and y on the y-axis.",
+    prompt = sprintf(
+      'practice_df has columns category, x, and y. Filter down to just category "%s", then create a scatter plot of x vs. y with any title you like. (No FIXME -- write the full pipeline yourself: filter(), then ggplot() + geom_point() + labs(title = ...).)',
+      target_cat
+    ),
     starting_code = sprintf(
-      "practice_df <- data.frame(x = c(%s), y = c(%s))\nggplot(practice_df, aes(x = FIXME, y = FIXME)) +\n  geom_point()",
-      x_str, y_str
+      "practice_df <- data.frame(category = c(%s), x = c(%s), y = c(%s))\n",
+      cat_str, x_str, y_str
     ),
     check = function(user_code, result, envir) {
+      uses_filter <- grepl("filter\\s*\\(", user_code)
       uses_geom_point <- grepl("geom_point\\s*\\(", user_code)
+      uses_labs <- grepl("labs\\s*\\(", user_code)
       is_ggplot <- inherits(result, "ggplot")
       has_point_layer <- is_ggplot && any(vapply(result$layers, function(l) inherits(l$geom, "GeomPoint"), logical(1)))
+      right_n <- is_ggplot && is.data.frame(result$data) && nrow(result$data) == sum(cat_col == target_cat)
       x_ok <- is_ggplot && identical(rlang::as_label(result$mapping$x), "x")
       y_ok <- is_ggplot && identical(rlang::as_label(result$mapping$y), "y")
-      passed <- uses_geom_point && is_ggplot && has_point_layer && x_ok && y_ok
+      has_title <- is_ggplot && is.character(result$labels$title) && nzchar(trimws(result$labels$title))
+      passed <- uses_filter && uses_geom_point && uses_labs && is_ggplot && has_point_layer && right_n && x_ok && y_ok && has_title
 
       message <- if (passed) {
-        "Correct -- that's a scatter plot of x vs. y."
+        sprintf('Correct -- filtered to "%s", plotted, and titled.', target_cat)
+      } else if (!uses_filter || !right_n) {
+        sprintf('Check the filter() step -- this should only include the "%s" rows.', target_cat)
       } else if (!is_ggplot) {
-        "This should produce a ggplot object -- make sure ggplot(practice_df, aes(...)) still starts the expression."
+        "This should produce a ggplot object -- make sure ggplot(..., aes(...)) starts the plotting expression."
       } else if (!has_point_layer) {
-        "This needs a geom_point() layer to draw the scatter plot."
+        "This needs a geom_point() layer."
       } else if (!x_ok) {
-        "The x-axis isn't mapped to x yet -- check aes()'s x argument."
+        "The x-axis isn't mapped to x yet."
+      } else if (!y_ok) {
+        "The y-axis isn't mapped to y yet."
       } else {
-        "Close -- the y-axis isn't mapped to y yet, check aes()'s y argument."
+        "The plot looks right, but it still needs a title -- add labs(title = \"...\") with any title you like."
       }
       list(passed = passed, message = message)
     }
@@ -2730,9 +2778,13 @@ generate_module5_practice <- function() {
 }
 
 generate_module6_practice <- function() {
-  n <- sample(4:6, 1)
-  actual <- sample(20:200, n)
-  predicted <- actual + sample(-15:15, n, replace = TRUE)
+  # Difficulty lever used here: bigger/messier inputs -- more cases,
+  # decimal values, rather than a handful of clean round numbers. Keeps
+  # the FIXME, since the skill being tested (the RMSE formula) is the
+  # same one just taught, not something to also strip scaffolding from.
+  n <- sample(8:12, 1)
+  actual <- round(runif(n, 15, 250), 1)
+  predicted <- round(actual + rnorm(n, sd = 12), 1)
   correct <- sqrt(mean((actual - predicted)^2))
   actual_str <- paste(actual, collapse = ", ")
   predicted_str <- paste(predicted, collapse = ", ")

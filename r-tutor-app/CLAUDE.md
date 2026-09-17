@@ -915,6 +915,14 @@ future module:
    restructured so testers write a few lines themselves, filtering results by species with
    the Module 4 `filter()` skill, rather than just clicking Run). Not yet sent to any real
    tester.
+   **Capstone revised again, later**, per direct feedback: `capstone_fish_survey.csv` is now
+   genuinely messy (dotted/mixed-case columns, real NAs in length and weight -- same style as
+   Module 4's own `fish_survey`) instead of pre-cleaned, so the script now opens with a
+   `rename()` + NA-filtering step before any modeling can happen, with `## Step Name`-style
+   comments before every block (e.g. `## Inspect data` before `str()`) and FIXMEs in both the
+   new cleanup step and the existing per-species check (8 total, up from 3). Re-ran it fully
+   filled-in to confirm it still works and still shows real signal (linear RMSE 58.8g vs.
+   forest 32.2g, per-species gap still notably uneven).
 10. **Screenshots and screen recordings (see that section above) are deliberately sequenced
     AFTER the pilot, not before or during it** -- explicitly reprioritized when this came up
     again after Module 6 was built. `pilot_testing/checkpoints_and_feedback.md` now directly
@@ -994,7 +1002,43 @@ future module:
       Module 6 (RMSE); Module 5's plot renders and its structural check passes; switching
       modules and clicking "New Question" both regenerate fresh values every time. Practice
       chat re-verified opening correctly (same automated-reply-testing caveat as before).
-13. Remaining:
+14. DONE: made the beta's 5 practice generators genuinely harder, per direct feedback --
+    deliberately a MIX of difficulty levers across the five, not the same treatment applied
+    uniformly (explicit direction: "some questions can still have the FIXME, some multiple
+    skill, etc."):
+    - Module 2 (comment-out): left as-is -- already an appropriately light task for what
+      that module teaches.
+    - Module 3 (vector indexing): FIXME scaffolding removed entirely -- the code box now
+      starts with just the vector, and the student writes the whole indexing expression
+      from scratch. Added a `uses_vec <- grepl("practice_vec", user_code)` check (mirroring
+      Module 6's `uses_given_vectors` pattern) so a hardcoded literal number can no longer
+      pass -- confirmed by testing exactly that (submitted a bare `24` matching the correct
+      answer; correctly rejected with "should be computed from practice_vec directly, not a
+      typed-in number").
+    - Module 4: now a full cumulative pipeline (filter + group_by + summarize + arrange, all
+      four, matching Module 4's own cumulative exercise shape) on a bigger table with an
+      added `store` column to group by, no FIXME.
+    - Module 5: now also cumulative (filter + plot + title, matching Module 5's own
+      cumulative exercise), with an added `category` column to filter on, no FIXME.
+    - Module 6: kept its FIXME (the skill being tested -- the RMSE formula -- was JUST
+      taught, not something to also strip scaffolding from) but made bigger/messier:
+      8-12 cases instead of 4-6, decimal values instead of clean round numbers.
+    All five re-tested end-to-end after the change (fail and pass paths where applicable,
+    plot rendering and grading for Module 5, the anti-hardcoding check for Module 3).
+15. **Logging practice-chat interactions (and distinguishing them from graded-exercise chats
+    on the instructor dashboard) was explicitly asked about, scoped, and DEFERRED** to after
+    this pilot round, on the app owner's own call. Not difficult, but a real feature,
+    comparable in size to the existing "Chats" tab work: `chat_logs.exercise_id` would need
+    to become nullable, plus a new nullable column (e.g. `practice_module`) so a row is
+    either a graded-exercise chat (`exercise_id` set) or a practice chat (`practice_module`
+    set) -- never both/neither. `wire_standalone_chat()` itself should stay unlogged for the
+    install-help case (that's still a deliberate choice, not an oversight -- see "Install-
+    section tutor chat" above); a NEW logging path is needed specifically for the practice
+    chat, since the install-help chat should not suddenly start being logged as a side
+    effect. The dashboard's Chats tab (student/exercise pickers, transcript viewer) would
+    need updating to surface practice-module chats as a distinct, clearly-labeled category
+    alongside real exercise titles, not merged into them. None of this is built yet.
+16. Remaining:
    - Actually run the pilot (send `pilot_testing/` materials to real testers).
    - Get real instructor usage on the dashboard's tabs to see if they actually answer the
      day-to-day questions, or need adjusting.
@@ -1008,4 +1052,6 @@ future module:
      beyond what that module's own graded exercises covered -- deliberately deferred until
      after the beta/that expansion, so the sentence describes what's actually there.
    - Get real pilot feedback on the beta itself before expanding it -- do the 5 module
-     choices and one-question-per-module scope feel right, or does it need adjusting first?
+     choices and per-module difficulty levels feel right, or does it need adjusting first?
+   - Build practice-chat logging + the dashboard distinction (item 15) once this pilot
+     round is done.

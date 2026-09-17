@@ -64,13 +64,13 @@ This is the "does this actually transfer" test -- no file from me this time.
 
 **Files you need (same folder together):** `capstone_model_comparison.R` and `capstone_fish_survey.csv`
 
-This previews where the course is ultimately headed: being handed a script that fits real models, and being able to make sense of -- and dig a little into -- what it's telling you. Most of this script is given to you and just needs to be run, but Step 9 near the bottom asks you to write a few lines yourself, reusing the `filter()` skill from Module 4 and the RMSE skill from Module 6.
+This previews where the course is ultimately headed: being handed a script that fits real models, and being able to make sense of -- and dig a little into -- what it's telling you. Most of this script is given to you, but it starts with genuinely messy data (like Module 4's fish_survey) and has several `FIXME`s along the way -- a rename step near the top, and a per-species check further down -- reusing skills from Module 4 and Module 6, not new ones.
 
 1. Open `capstone_model_comparison.R` in RStudio.
-2. Run Steps 1-8 top to bottom (it may install one extra package the first time -- that's expected).
-3. At Step 9, fill in the three `FIXME`s yourself (see the comment right above it for what goes there), then run that part too.
+2. Work through it top to bottom, filling in each `FIXME` as you reach it (the comment right above each one says what goes there), running each step as you go.
+3. It may install one extra package the first time (for the random forest model) -- that's expected.
 4. Answer the five questions at the bottom of the script, in your own words.
-5. Note anything that errored, looked broken, or you didn't understand -- including if a plain-language explanation of any term used (RMSE, "training"/"test" data, etc.) would have helped, and including whether Step 9 felt like a reasonable amount of your own code to write at this point, or too much/too little.
+5. Note anything that errored, looked broken, or you didn't understand -- including if a plain-language explanation of any term used (RMSE, "training"/"test" data, etc.) would have helped, and including whether the amount of code you had to write yourself (the cleanup step plus the per-species check) felt reasonable at this point, or too much/too little.
 
 **Your answers to Q1-Q5, and any notes:**
 
