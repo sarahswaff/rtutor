@@ -102,6 +102,15 @@ Answer these for your overall impression across however many times you used it:
 
 ---
 
+## Screenshots and screen recordings
+
+Module 1 (installing R and RStudio, the RStudio panes) is currently just text and screenshots aren't in there yet -- we're deciding whether to add real screenshots or short screen-recording clips of those steps.
+
+- Would seeing an actual screenshot (or a short clip) of an install step or an RStudio pane have made Module 1 easier to follow, or was text enough? __
+- Any specific spot where you found yourself wishing you could just *see* what it should look like? __
+
+---
+
 ## Anything else
 
 Open space for anything that doesn't fit above -- pacing, wording, things you'd change, things that worked better than expected.

@@ -651,7 +651,13 @@ quiz_question_ui("help_quiz", "You want to know what arguments the mean() functi
 
 ## Module 2: Wrapping up
 
-You've now covered packages, the console vs. scripts, comments, running provided code, reading error messages, and finding help -- the core habits that make everything after this feel far less unfamiliar.
+You've now got the basic habits of working in R day-to-day: telling the console from a script, loading packages before using them, leaving comments for your future self, and reading an error message as information rather than a dead end.
+
+**If you remember only a few things from this module:**
+
+- A red error message is R telling you exactly what it's confused about -- read it before assuming something's broken.
+- A package has to be loaded with `library()` in *every new session*, even after it's already installed.
+- You'll often be running code someone else wrote, not just your own -- that's normal, not a shortcut.
 
 ### Up next
 
@@ -661,6 +667,20 @@ Module 3 gets into actual data: data types, naming conventions, vectors, assignm
 # Grading logic for this module's exercises. Unchanged from the
 # gradethis-based version -- only how it's *called* changed, not the
 # grading logic itself.
+
+# Given inputs for the "Turning a formula into code" exercise -- the
+# student translates the Pythagorean theorem into code using these, so (like
+# Module 4's fish_clean) they need to be explicitly placed in globalenv():
+# exercise_server()'s eval(parse(text = user_code), envir = new.env())
+# resolves its environment's parent chain through globalenv(), not through
+# this setup chunk's own local execution environment. This is the first
+# exercise in Modules 1-3 that needs pre-existing shared data rather than
+# building a self-contained vector from scratch, so it's the first place in
+# this module that hits the same gotcha Module 4 first ran into.
+formula_a <- c(3, 6, 5)
+formula_b <- c(4, 8, 12)
+assign("formula_a", formula_a, envir = globalenv())
+assign("formula_b", formula_b, envir = globalenv())
 
 evaluate_assignment_exercise <- function(user_code, result, stage) {
   has_apples <- grepl("apples\\s*<-", user_code)
@@ -726,6 +746,30 @@ evaluate_fix_comparison_exercise <- function(user_code, result, stage) {
   list(passed = passed, message = feedback_message)
 }
 
+evaluate_formula_exercise <- function(user_code, result, stage) {
+  uses_sqrt <- grepl("sqrt\\s*\\(", user_code)
+  uses_given_vectors <- grepl("formula_a", user_code) && grepl("formula_b", user_code)
+  correct_result <- sqrt(formula_a^2 + formula_b^2)
+  result_ok <- is.numeric(result) && length(result) == length(correct_result) &&
+    isTRUE(all.equal(as.numeric(result), correct_result, tolerance = 0.001))
+
+  passed <- uses_sqrt && uses_given_vectors && result_ok
+
+  feedback_message <- if (passed) {
+    "That's the formula translated correctly -- sqrt(a^2 + b^2), computed for all three triangles at once."
+  } else if (identical(stage, "error_check")) {
+    "That code doesn't run as-is -- check that both ^FIXMEs are replaced with a number, and the parentheses all match."
+  } else if (!uses_given_vectors) {
+    "This should be computed from formula_a and formula_b directly, not typed-in numbers."
+  } else if (!uses_sqrt) {
+    "The formula needs a square root -- check that sqrt() is still wrapped around the rest of the expression."
+  } else {
+    "Close, but that's not quite c = sqrt(a^2 + b^2) yet -- check what power formula_a and formula_b are each raised to."
+  }
+
+  list(passed = passed, message = feedback_message)
+}
+
 evaluate_module3_cumulative_exercise <- function(user_code, result, envir, stage) {
   has_prices <- !is.null(envir) && exists("prices", envir = envir, inherits = FALSE) &&
     is.numeric(get("prices", envir = envir)) &&
@@ -756,6 +800,7 @@ evaluate_module3_cumulative_exercise <- function(user_code, result, envir, stage
 wire_tutor_chat("module3_assignment", "tutor_chat_m3_1", "tutor_accordion_m3_1", "Ask the Tutor", input, output, session)
 wire_tutor_chat("module3_vectors", "tutor_chat_m3_2", "tutor_accordion_m3_2", "Ask the Tutor", input, output, session)
 wire_tutor_chat("module3_fix_comparison", "tutor_chat_m3_3", "tutor_accordion_m3_3", "Ask the Tutor", input, output, session)
+wire_tutor_chat("module3_formula_to_code", "tutor_chat_m3_5", "tutor_accordion_m3_5", "Ask the Tutor", input, output, session)
 wire_tutor_chat("module3_cumulative", "tutor_chat_m3_4", "tutor_accordion_m3_4", "Ask the Tutor", input, output, session)
 ```
 
@@ -791,6 +836,12 @@ quiz_question_server(input, output, session, "import_quiz", list(
   correct = list(correct = TRUE, message = "Correct!"),
   wrong_no_wd = list(correct = FALSE, message = "It's the opposite -- import is exactly where the working directory matters most.")
 ))
+
+quiz_question_server(input, output, session, "formula_quiz", list(
+  correct = list(correct = TRUE, message = "Correct -- multiplication in the formula becomes * in R."),
+  wrong_plus = list(correct = FALSE, message = "That would add length and width instead of multiplying them -- area is l times w, not l plus w."),
+  wrong_power = list(correct = FALSE, message = "That raises l to the power of w -- the x in the formula means multiplication, not an exponent.")
+))
 ```
 
 ```{r, context="server"}
@@ -811,6 +862,12 @@ exercise_server(
   input, output, session, "fix_comparison_exercise", "module3_fix_comparison", "tutor_accordion_m3_3",
   starting_code = "temperature <- 75\ntemperature = 80",
   evaluate_fn = function(user_code, result, envir, stage) evaluate_fix_comparison_exercise(user_code, result, stage)
+)
+
+exercise_server(
+  input, output, session, "formula_exercise", "module3_formula_to_code", "tutor_accordion_m3_5",
+  starting_code = "sqrt(formula_a^FIXME + formula_b^FIXME)",
+  evaluate_fn = function(user_code, result, envir, stage) evaluate_formula_exercise(user_code, result, stage)
 )
 
 exercise_server(
@@ -1026,6 +1083,64 @@ accordion(
 )
 ```
 
+## Module 3: Turning a formula into code
+
+A lot of real work you'll be handed later comes as a **math formula** rather than ready-made code -- and translating one into the other is a skill on its own. The good news: R's arithmetic symbols line up with math almost exactly. `+`, `-`, `*`, and `/` mean what they look like they mean, `^` raises to a power, and a square root becomes the function `sqrt()`.
+
+For example, converting a temperature from Celsius to Fahrenheit uses the formula:
+
+$$
+F = C \times \frac{9}{5} + 32
+$$
+
+```{r formula-demo, echo=TRUE}
+celsius <- c(0, 20, 37)
+fahrenheit <- celsius * 9 / 5 + 32
+fahrenheit
+```
+
+Each piece of the formula has a direct match in the code: $C$ is `celsius`, $\times$ is `*`, and the fraction $\frac{9}{5}$ is just `9 / 5`.
+
+```{r, echo=FALSE}
+quiz_question_ui("formula_quiz", "The area of a rectangle is A = l x w (length times width). Which R code correctly computes it?", c(
+  "area <- l * w" = "correct",
+  "area <- l + w" = "wrong_plus",
+  "area <- l^w" = "wrong_power"
+))
+```
+
+### Practice: hypotenuse from a formula
+
+The Pythagorean theorem gives the length of a right triangle's longest side (the hypotenuse) from its two shorter sides:
+
+$$
+c = \sqrt{a^2 + b^2}
+$$
+
+Below, `formula_a` and `formula_b` are vectors holding the two shorter sides of three different triangles. Translate the formula into code, replacing both `FIXME`s (each should become the power the corresponding side is raised to).
+
+```{r, echo=FALSE}
+exercise_ui("formula_exercise", "sqrt(formula_a^FIXME + formula_b^FIXME)")
+```
+
+Stuck, or want to double check your thinking? The tutor chat below is available any time -- before you submit, after a failed attempt, or even after you've already passed.
+
+```{r, echo=FALSE}
+accordion(
+  id = "tutor_accordion_m3_5",
+  open = FALSE,
+  accordion_panel(
+    title = "Ask the Tutor",
+    chat_ui(
+      "tutor_chat_m3_5",
+      placeholder = "Ask a question about this exercise...",
+      greeting = TUTOR_CHAT_GREETING,
+      allow_attachments = FALSE
+    )
+  )
+)
+```
+
 ## Module 3: Importing data
 
 So far every value has been typed directly into your code. In practice, most real data lives in files -- most commonly `.csv` files -- and you **import** it into R rather than retyping it.
@@ -1080,7 +1195,13 @@ That last exercise had several moving pieces at once -- a missing comma, a varia
 
 ## Module 3: Wrapping up
 
-You've now covered data types, naming conventions, assignment, vectors, data structures, basic functions and comparisons, and importing data -- the fundamentals everything later in this course builds on.
+You've now got the raw materials everything else in this course is built from: values with types, vectors that hold many of them at once, and the `<-`/`==` distinction that trips up most beginners at least once.
+
+**If you remember only a few things from this module:**
+
+- `<-` assigns, `==` compares -- confusing them is the single most common beginner mistake in this course.
+- A vector holds many values of the *same* type; indexing with `[ ]` pulls one (or more) back out.
+- Translating a formula or real-world calculation into code (like this module's Pythagorean theorem exercise) is a skill you'll keep using, not a one-off.
 
 ### Up next
 
@@ -1724,7 +1845,13 @@ accordion(
 
 ## Module 4: Wrapping up
 
-You've now taken a genuinely messy data frame and cleaned it up end to end: inspected it, renamed its columns, subset it, and used the pipe with `filter()`, `select()`, `mutate()`, `arrange()`, `group_by()`, and `summarize()` to answer real questions from it -- including handling missing data along the way.
+You've now taken a genuinely messy data frame and turned it into something you can actually answer questions from -- and real data almost always needs this kind of cleanup before anything else useful can happen to it.
+
+**If you remember only a few things from this module:**
+
+- The pipe (`|>`) reads as "then" -- each step takes the previous step's result and does one more thing to it.
+- `group_by()` + `summarize()` is how you go from many rows to one answer per group -- one of the most common things you'll do with real data.
+- Missing values (`NA`) don't just disappear -- functions like `mean()` need `na.rm = TRUE` or they'll silently return `NA` themselves.
 
 ### Up next
 
@@ -2142,6 +2269,12 @@ accordion(
 
 That's Modules 1 through 5: from installing R and RStudio, through running and reading code, working with data, cleaning it up with dplyr, and now actually producing plots from it with ggplot2 -- plus the surrounding habits (script organization, file naming, R Markdown and version control awareness) that carry into real work beyond this tutorial.
 
+**If you remember only a few things from this module:**
+
+- Every ggplot2 plot follows the same pattern: `ggplot(data, aes(...))` sets up what to plot, `+ geom_...()` says how to draw it.
+- Naming files and organizing scripts sensibly isn't busywork -- it's what makes a project usable by you (or someone else) six months from now.
+- You now have every skill this course originally set out to build: install, run, clean, and visualize. Module 6 turns to a different question -- judging whether output is any good.
+
 ### Up next
 
 Everything so far has been about producing your own output -- a cleaned table, a plot. Module 6 flips that around: it's about making sense of output someone else's model produced, so that when you're handed real results later, you can tell whether they're any good.
@@ -2323,7 +2456,15 @@ quiz_question_ui("curved_shape_quiz", "Look at \"Relationship B\" above. Does it
 
 ## Module 6: R-squared -- how much does this explain?
 
-**R-squared (R^2^)** is a number between 0 and 1 that says how much of the up-and-down variation in the outcome a model actually accounts for. An R^2^ of 0 means the model explains essentially nothing; an R^2^ of 1 means it explains all of it (rare, and often a sign something's off). Closer to 1 is generally better, but it's not the whole story -- a model can have a high R^2^ and still be the wrong shape (a straight line squeezed through curved data can still post a middling-to-decent R^2^ while clearly missing the pattern), which is why you look at both the number and the shape.
+**R-squared (R^2^)** is a number between 0 and 1 that says how much of the up-and-down variation in the outcome a model actually accounts for:
+
+$$
+R^2 = 1 - \frac{\sum_{i=1}^{n}(\text{actual}_i - \text{predicted}_i)^2}{\sum_{i=1}^{n}(\text{actual}_i - \overline{\text{actual}})^2}
+$$
+
+The bottom of the fraction is how much the actual values vary on their own (compared to their average, $\overline{\text{actual}}$); the top is how much of that variation the model's predictions still miss. Subtracting that ratio from 1 turns "fraction still missed" into "fraction explained."
+
+An R^2^ of 0 means the model explains essentially nothing; an R^2^ of 1 means it explains all of it (rare, and often a sign something's off). Closer to 1 is generally better, but it's not the whole story -- a model can have a high R^2^ and still be the wrong shape (a straight line squeezed through curved data can still post a middling-to-decent R^2^ while clearly missing the pattern), which is why you look at both the number and the shape.
 
 ```{r, echo=FALSE}
 quiz_question_ui("r_squared_quiz", "A model has an R-squared of 0.85. Another model, on the same data, has an R-squared of 0.20. Which model is explaining more of the variation in the outcome?", c(
@@ -2335,9 +2476,15 @@ quiz_question_ui("r_squared_quiz", "A model has an R-squared of 0.85. Another mo
 
 ## Module 6: RMSE -- how far off are the guesses?
 
-**RMSE (root mean squared error)** answers a more concrete question: on average, how far off is the model's prediction from the real value? It's in the *same units* as whatever you're predicting -- an RMSE of 12 grams means the model's guesses are typically off by around 12 grams. Lower RMSE means smaller, better predictions.
+**RMSE (root mean squared error)** answers a more concrete question: on average, how far off is the model's prediction from the real value?
 
-Underneath, it's simple: for each prediction, subtract the actual value to get how far off it was, square those differences (so a miss in either direction counts, and big misses count extra), average the squared differences, then take the square root to get back to the original units.
+$$
+\text{RMSE} = \sqrt{\frac{1}{n}\sum_{i=1}^{n}(\text{actual}_i - \text{predicted}_i)^2}
+$$
+
+$n$ is how many predictions there are, and $\text{actual}_i$/$\text{predicted}_i$ are the real and predicted value for the $i$-th one. In words: for each prediction, subtract to see how far off it was, square those differences (so a miss in either direction counts, and big misses count extra), average the squared differences, then take the square root to get back to the original units.
+
+It's in the *same units* as whatever you're predicting -- an RMSE of 12 grams means the model's guesses are typically off by around 12 grams. Lower RMSE means smaller, better predictions.
 
 ### Practice: compute RMSE
 
@@ -2420,6 +2567,12 @@ accordion(
 
 ## Module 6: Wrapping up
 
-That covers the basics of judging model output: recognizing a linear vs. a curved relationship, reading R^2^ and RMSE, and comparing two models fairly. None of it required building a model yourself -- just the vocabulary and habits to make sense of one you're handed.
+That covers the basics of judging model output -- none of it required building a model yourself, just the vocabulary and habits to make sense of one you're handed.
+
+**If you remember only a few things from this module:**
+
+- Look at the shape of the data before trusting a straight-line model -- a curve squeezed into a line will systematically miss.
+- RMSE is in the *same units* as what you're predicting, and lower is better; R^2^ is a 0-1 fraction of variation explained, and closer to 1 is better.
+- Always compare two models on the same held-out data they weren't trained on -- looking good on data a model has already seen doesn't count.
 
 That's exactly what the capstone preview coming up asks you to do: a real script fits two models to real fish data and prints their RMSE, and your job is to read that output and decide what it's telling you.

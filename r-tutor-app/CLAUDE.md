@@ -54,7 +54,10 @@ r-tutor-app/
 │   ├── module_2.Rmd    -- superseded by course.Rmd; kept for reference/rollback
 │   ├── module_3.Rmd    -- superseded by course.Rmd; kept for reference/rollback
 │   ├── module_4.Rmd    -- superseded by course.Rmd; kept for reference/rollback
-│   └── module_5.Rmd    -- superseded by course.Rmd; kept for reference/rollback
+│   ├── module_5.Rmd    -- superseded by course.Rmd; kept for reference/rollback
+│   └── media/           -- prepped, empty (see "Screenshots and screen recordings" below)
+│       ├── images/
+│       └── videos/
 ├── student_app/         -- not yet built
 └── instructor_dashboard/ -- app.R, built and tested locally (see "Instructor dashboard")
 ```
@@ -77,7 +80,7 @@ r-tutor-app/
   computed live from exercise_attempts. Dashboard mastery queries should read from this view,
   never a hand-maintained status column.
 
-## Curriculum (5 modules, finalized -- do not reorganize without reason)
+## Curriculum (6 modules, finalized -- do not reorganize without reason)
 1. **Introduction** -- install R/RStudio, panes, working directory. DONE, but see "Current
    status" below -- the install section was substantively rewritten from a passive fact-list
    into an actual guided step-by-step walkthrough and hasn't been re-verified live in a
@@ -85,7 +88,8 @@ r-tutor-app/
 2. **Basic Code** -- packages, console, comments, run provided code, error messages, help().
    DONE (module_2.Rmd).
 3. **Data** -- hello world, data types, naming conventions, vectors, assignment, basic
-   functions/comparisons, data structures, import. DONE (module_3.Rmd).
+   functions/comparisons, data structures, import, **turning a formula into code** (added
+   later -- see "Current status" below for why). DONE (module_3.Rmd).
 4. **Clean up** -- inspect, rename columns, index/subset, pipe, dplyr verbs
    (filter/select/mutate/arrange/group_by/summarize), handling NAs. DONE (module_4.Rmd) --
    built around a synthetic 10-row fish survey data set (`fish_survey`/`fish_clean`, two
@@ -97,8 +101,16 @@ r-tutor-app/
    ggplot exercises (scatter, bar from a dplyr summary, histogram, filtered+titled
    cumulative) plus quiz-only awareness content for everything else, since none of the
    file-naming/Markdown/version-control content involves writing new code.
+6. **Interpreting Model Output** -- recognizing linear vs. curved relationships, reading
+   R^2^ and RMSE, comparing two models' predictions. Added after Modules 1-5 (see "Current
+   status" below). Deliberately does NOT involve building a model -- that's still out of
+   scope for the tutorial itself (see below). DONE -- 2 graded exercises (compute RMSE;
+   decide which of two models wins), each with its own tutor chat.
 
-A capstone pipeline assessment exists but is explicitly OUT of scope for the tutorial itself.
+A capstone pipeline assessment exists but is explicitly OUT of scope for the tutorial itself
+-- Module 6 teaches the vocabulary to interpret one's output, not how to build one. A
+`pilot_testing/` folder (see "Current status" below) previews that capstone as a standalone
+script run outside the app, for pilot-testing purposes only.
 
 ## Key conventions (established through real trial and error -- follow these)
 
@@ -648,6 +660,57 @@ tutor conversations were originally confirmed by a human typing in an actual bro
 via automated testing). **A human should confirm this one manually in a real browser**
 before considering it fully done.
 
+## Screenshots and screen recordings (planned, not started)
+**Deliberately sequenced AFTER the pilot, not before or during it** -- see "Current status"
+below. Rather than deciding up front whether this is worth the effort, `pilot_testing/
+checkpoints_and_feedback.md` directly asks real testers whether a screenshot or clip would
+have helped Module 1, and where -- so the decision is based on actual signal, not a guess.
+
+Idea: add real screenshots and short screen recordings to `course.Rmd` for the one part of
+the course that has no live code output to speak for itself -- Module 1's "Installing R and
+RStudio" and "The RStudio panes" -- plus later, wherever seeing code actually run (not just
+reading about it) would help more than text alone.
+
+**Sourcing must be the user's own screen captures, not third-party images.** Pulling an
+existing screenshot from someone else's site was explored and abandoned: Claude's browser
+tool can *view* a live page but has no way to save that view as a file (confirmed by
+testing -- nothing appears on disk after a screenshot action), and the one plausible
+freely-licensed alternative found on Wikimedia Commons ("RStudio IDE screenshot.png", CC
+BY-SA 4.0) turned out to be flagged by Commons itself as having disputed copyright status
+(RStudio's own AGPLv3 licensing may mean a screenshot of its UI isn't the uploader's to
+freely relicense) -- filed under Commons' own "Items with disputed copyright information."
+Self-captured screenshots/recordings of the user's own RStudio session sidestep this
+entirely: that's the user's own original capture, not a reproduction of someone else's
+published work, regardless of RStudio the application being copyrighted.
+
+**Prepped so far:**
+- `tutorials/media/images/` and `tutorials/media/videos/` -- empty, ready for real files.
+- Suggested formats: PNG for static screenshots (CRAN/RStudio download pages, pane
+  layout); GIF for short silent clips (embeds directly via plain Markdown image syntax,
+  no video player/HTML needed -- ideal for something like "here's how you run a line of
+  code"); MP4 only if a clip genuinely needs to be longer than a GIF comfortably allows.
+- Software (all free/open-source or already installed -- no paid tools needed for this):
+  - **ShareX** (Windows, free/open-source) -- screenshots with annotation (arrows,
+    highlighting, blur) plus short GIF/video capture, covers most of this in one tool.
+  - **ScreenToGif** (Windows, free/open-source) -- dedicated short animated-GIF recorder,
+    good specifically for brief "watch this run" clips.
+  - **OBS Studio** (free/open-source, cross-platform) -- for a longer/full-quality video
+    recording if a GIF isn't enough.
+  - **Xbox Game Bar** (`Win+G`, already built into Windows) -- zero-install MP4 screen
+    recording, the simplest option if nothing fancier is needed.
+  - Windows' built-in Snipping Tool / Snip & Sketch is fine for plain screenshots; ShareX
+    only adds value once arrows/highlighting/blur are wanted.
+
+**Still to do when this is picked back up:**
+- Actually capture the images/clips (user's own screen, their call on OS/theme/setup shown).
+- Embed them in `tutorials/course.Rmd` at the relevant spots (Markdown image syntax for
+  PNG/GIF; an HTML5 `<video>` tag for MP4).
+- Sync `tutorials/media/` into `deploy/course/media/` (the existing flattened-deploy-copy
+  step doesn't currently include it, since there was nothing to copy yet) and confirm
+  `rsconnect::writeManifest()` picks up the new files before the next deploy.
+- Be ready to pull anything back out if it doesn't actually help teaching/learning -- this
+  was an explicit condition going in, not just a nice-to-have.
+
 
 ## Current status / immediate next step
 
@@ -813,7 +876,45 @@ future module:
    `deploy/instructor_dashboard/` (already regenerated) pushed to Connect Cloud. Note the
    install-section chat (item 6) will NOT appear here even once deployed, since it isn't
    logged to `chat_logs` at all -- deliberate, see that section.
-8. Remaining:
+8. DONE: added Module 6, "Interpreting Model Output" -- linear-vs-curved recognition,
+   R^2^/RMSE (shown as both a formula and plain language, deliberately -- see below), and
+   comparing two models, with no actual model-building. Two graded exercises (compute RMSE;
+   decide which of two models wins), each with its own tutor chat. Also added a new Module 3
+   exercise, "Turning a formula into code" (Pythagorean theorem -> `sqrt(a^2 + b^2)`),
+   specifically so students hit "translate a formula into R" once on something simple before
+   Module 6 needs the same skill for RMSE. Both built and tested locally end-to-end
+   (quizzes, exercise fail/pass/error paths, tutor chat auto-open, `exercise_attempts`
+   logging all confirmed against Supabase); `deploy/course/` regenerated to match.
+   **R^2^/RMSE are shown as real math notation (MathJax, already wired into this course via
+   `--mathjax` in the pandoc build) alongside the plain-language walkthrough, not
+   prose-only** -- added after the app owner pointed out that English-only explanations of a
+   formula are less accessible than showing the actual notation, especially for
+   international students; formula notation reads the same regardless of English fluency.
+   **Still needs one manual check**, same caveat as item 6: an actual tutor-chat reply for
+   Module 6's exercises could not be confirmed via automated browser testing (typed message
+   didn't register, 0 rows in `chat_logs` afterward) -- consistent with the same shinychat/
+   browser-automation limitation already noted for the install-section chat, not a new bug.
+   **Every module's "Wrapping up" section was also rewritten** -- they'd all converged on
+   the same weak pattern (one sentence just re-listing that module's topic nouns, e.g.
+   "You've now covered X, Y, Z"), flagged by the app owner as not actually useful. Now each
+   one keeps a short recap but adds a "If you remember only a few things from this module"
+   list of 2-3 concrete, conceptual takeaways instead of a topic-name recap. Module 1 was
+   deliberately left alone -- its "Wrapping up" centers on a real check exercise, not a
+   prose recap, so it was never the pattern being complained about.
+9. DONE: built a `pilot_testing/` folder (message to send guinea-pig testers, checkpoints to
+   inject at specific points in the course, the data/scripts those checkpoints need,
+   including a capstone script comparing a linear model vs. a random forest on fish data --
+   restructured so testers write a few lines themselves, filtering results by species with
+   the Module 4 `filter()` skill, rather than just clicking Run). Not yet sent to any real
+   tester.
+10. **Screenshots and screen recordings (see that section above) are deliberately sequenced
+    AFTER the pilot, not before or during it** -- explicitly reprioritized when this came up
+    again after Module 6 was built. Rather than guessing whether Module 1's install section
+    needs visuals, `pilot_testing/checkpoints_and_feedback.md` now directly asks testers
+    whether a screenshot/clip would have helped and where -- so the decision to invest in
+    capturing/embedding media is based on real pilot signal, not assumption.
+11. Remaining:
+   - Actually run the pilot (send `pilot_testing/` materials to real testers).
    - Get real instructor usage on the dashboard's tabs to see if they actually answer the
      day-to-day questions, or need adjusting.
    - Run `Rscript R/classify_chat_messages.R` periodically (by hand, or set up on a
