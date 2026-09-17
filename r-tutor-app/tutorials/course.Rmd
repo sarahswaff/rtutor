@@ -2140,6 +2140,286 @@ accordion(
 
 ## Module 5: Wrapping up
 
-That's the full course: from installing R and RStudio, through running and reading code, working with data, cleaning it up with dplyr, and now actually producing plots from it with ggplot2 -- plus the surrounding habits (script organization, file naming, R Markdown and version control awareness) that carry into real work beyond this tutorial.
+That's Modules 1 through 5: from installing R and RStudio, through running and reading code, working with data, cleaning it up with dplyr, and now actually producing plots from it with ggplot2 -- plus the surrounding habits (script organization, file naming, R Markdown and version control awareness) that carry into real work beyond this tutorial.
 
-From here, you're ready to work with the scripts, data, and instructions you'll be given in the rest of this course -- not by memorizing every function, but by recognizing what's going on and knowing how to ask for help when something doesn't make sense.
+### Up next
+
+Everything so far has been about producing your own output -- a cleaned table, a plot. Module 6 flips that around: it's about making sense of output someone else's model produced, so that when you're handed real results later, you can tell whether they're any good.
+
+```{r setup-module6, context="setup", include=FALSE}
+# Demo data for the linear-vs-curved recognition quizzes -- pure visual aids,
+# no exercise attached, so these don't need globalenv() placement the way
+# exercise-referenced data does (see Module 4's setup chunk note on why
+# THAT data needs it -- these plots render at knit/render time only, never
+# touched by exercise_server()'s eval(parse(...), envir = new.env())).
+set.seed(42)
+demo_linear_x <- 1:30
+demo_linear_y <- 2 * demo_linear_x + rnorm(30, sd = 3)
+
+demo_curved_x <- 1:30
+demo_curved_y <- 0.5 * demo_curved_x^2 + rnorm(30, sd = 20)
+
+# Data for the RMSE practice exercise and the "which model wins" cumulative
+# exercise below. Both are referenced by exercise_server()'s
+# eval(parse(text = user_code), envir = new.env()) -- see Module 4's setup
+# chunk note for why that means these need to be explicitly placed in
+# globalenv(), not just assigned normally here.
+actual_weights <- c(45, 62, 58, 71, 39)
+predicted_weights <- c(50, 55, 60, 68, 42)
+
+actual_values <- c(120, 340, 210, 95, 275)
+predicted_model_a <- c(150, 300, 260, 130, 230)
+predicted_model_b <- c(125, 335, 205, 100, 270)
+
+for (nm in c("actual_weights", "predicted_weights", "actual_values", "predicted_model_a", "predicted_model_b")) {
+  assign(nm, get(nm), envir = globalenv())
+}
+
+# Grading logic for this module's two exercises. log_attempt_and_maybe_open_chat()
+# and wire_tutor_chat() themselves are shared across modules -- see R/tutor_utils.R.
+
+evaluate_rmse_exercise <- function(user_code, result, envir, stage) {
+  uses_given_vectors <- grepl("actual_weights", user_code) && grepl("predicted_weights", user_code)
+  correct_rmse <- sqrt(mean((actual_weights - predicted_weights)^2))
+  is_numeric_result <- is.numeric(result) && length(result) == 1
+  result_ok <- is_numeric_result && isTRUE(all.equal(as.numeric(result), correct_rmse, tolerance = 0.01))
+
+  passed <- uses_given_vectors && result_ok
+
+  feedback_message <- if (passed) {
+    paste0("That's right -- an RMSE of about ", round(correct_rmse, 2), " grams.")
+  } else if (identical(stage, "error_check")) {
+    "That code doesn't run as-is -- check that differences^FIXME is valid R (FIXME needs to be replaced with a number)."
+  } else if (!uses_given_vectors) {
+    "This should be computed from actual_weights and predicted_weights directly, not typed-in numbers."
+  } else if (!is_numeric_result) {
+    "This should end up as a single number -- check that sqrt(mean(...)) is still the outermost part of the expression."
+  } else {
+    "Close, but that's not quite the RMSE -- check what power the differences should be raised to before averaging."
+  }
+
+  list(passed = passed, message = feedback_message)
+}
+
+evaluate_module6_cumulative_exercise <- function(user_code, result, envir, stage) {
+  has_rmse_a <- exists("rmse_a", envir = envir, inherits = FALSE) && is.numeric(get("rmse_a", envir = envir))
+  has_rmse_b <- exists("rmse_b", envir = envir, inherits = FALSE) && is.numeric(get("rmse_b", envir = envir))
+
+  correct_rmse_a <- sqrt(mean((actual_values - predicted_model_a)^2))
+  correct_rmse_b <- sqrt(mean((actual_values - predicted_model_b)^2))
+  rmse_a_ok <- has_rmse_a && isTRUE(all.equal(get("rmse_a", envir = envir), correct_rmse_a, tolerance = 0.01))
+  rmse_b_ok <- has_rmse_b && isTRUE(all.equal(get("rmse_b", envir = envir), correct_rmse_b, tolerance = 0.01))
+
+  has_better_model <- exists("better_model", envir = envir, inherits = FALSE)
+  better_model_val <- if (has_better_model) toupper(trimws(as.character(get("better_model", envir = envir)))) else NA_character_
+  better_model_ok <- has_better_model && identical(better_model_val, "B")
+
+  passed <- rmse_a_ok && rmse_b_ok && better_model_ok
+
+  feedback_message <- if (passed) {
+    paste0(
+      "Right -- Model A's RMSE is about ", round(correct_rmse_a, 1),
+      " and Model B's is about ", round(correct_rmse_b, 1), ", so Model B wins."
+    )
+  } else if (identical(stage, "error_check")) {
+    "That code doesn't run as-is -- work through it one line at a time, same as earlier modules' cumulative exercises."
+  } else if (!has_rmse_a || !rmse_a_ok) {
+    "rmse_a doesn't look right yet -- check that it's computed the same way as the practice exercise above, using predicted_model_a."
+  } else if (!has_rmse_b || !rmse_b_ok) {
+    "rmse_b doesn't look right yet -- check the power the differences are raised to before averaging."
+  } else if (!has_better_model) {
+    "better_model doesn't exist yet -- assign it \"A\" or \"B\", whichever model actually has the lower RMSE."
+  } else {
+    "rmse_a and rmse_b both look right, but better_model isn't picking the one with the lower RMSE -- double check which of the two is actually smaller."
+  }
+
+  list(passed = passed, message = feedback_message)
+}
+```
+
+```{r, context="server"}
+# --- Tutor chat wiring --------------------------------------------------
+wire_tutor_chat("module6_rmse", "tutor_chat_m6_1", "tutor_accordion_m6_1", "Ask the Tutor", input, output, session)
+wire_tutor_chat("module6_cumulative", "tutor_chat_m6_2", "tutor_accordion_m6_2", "Ask the Tutor", input, output, session)
+```
+
+```{r, context="server"}
+# --- Quiz question wiring ------------------------------------------------
+quiz_question_server(input, output, session, "linear_shape_quiz", list(
+  correct = list(correct = TRUE, message = "Right -- as x increases, y goes up at a roughly constant rate the whole way, which is what a straight line looks like."),
+  wrong_curve = list(correct = FALSE, message = "Look again -- the rate y increases by stays about the same across the whole range of x, which is the hallmark of a straight line, not a curve.")
+))
+
+quiz_question_server(input, output, session, "curved_shape_quiz", list(
+  correct = list(correct = TRUE, message = "Right -- notice how it rises more and more steeply as x increases, rather than at a constant rate. That bending is what makes it a curve."),
+  wrong_line = list(correct = FALSE, message = "Look again -- the rate y increases by is not constant here, it keeps getting steeper. A straight line would rise at the same rate the whole way across.")
+))
+
+quiz_question_server(input, output, session, "r_squared_quiz", list(
+  correct = list(correct = TRUE, message = "Correct -- 0.85 is closer to 1, meaning that model accounts for more of the variation in the outcome."),
+  wrong_low = list(correct = FALSE, message = "That's backwards -- a higher R-squared (closer to 1) means more of the variation is explained, and 0.20 is the lower of the two."),
+  wrong_same = list(correct = FALSE, message = "They're quite different -- 0.85 vs. 0.20 is a big gap in how much variation each model accounts for.")
+))
+
+quiz_question_server(input, output, session, "rmse_compare_quiz", list(
+  correct = list(correct = TRUE, message = "Correct -- lower RMSE means smaller typical errors, so Model A's predictions are closer to the truth on average."),
+  wrong_b = list(correct = FALSE, message = "That's backwards -- lower RMSE is better, and 12 is lower than 40."),
+  wrong_r2 = list(correct = FALSE, message = "RMSE alone is enough to compare two models predicting the same thing in the same units -- no R-squared needed.")
+))
+
+quiz_question_server(input, output, session, "rmse_units_quiz", list(
+  correct = list(correct = TRUE, message = "Correct -- RMSE is expressed in the same units as the outcome, so an RMSE in kilograms and one in grams aren't on the same scale."),
+  wrong_unitless = list(correct = FALSE, message = "RMSE is NOT unitless -- it carries the same units as whatever you're predicting, which is exactly why comparing across different units is misleading."),
+  wrong_grams = list(correct = FALSE, message = "RMSE works the same way regardless of which units you're predicting in -- the issue is comparing two DIFFERENT units to each other, not grams specifically.")
+))
+```
+
+```{r, context="server"}
+# --- Exercise wiring -------------------------------------------------------
+exercise_server(
+  input, output, session, "rmse_exercise", "module6_rmse", "tutor_accordion_m6_1",
+  starting_code = "differences <- actual_weights - predicted_weights\nsqrt(mean(differences^FIXME))",
+  evaluate_fn = evaluate_rmse_exercise
+)
+
+exercise_server(
+  input, output, session, "module6_cumulative_exercise", "module6_cumulative", "tutor_accordion_m6_2",
+  starting_code = "rmse_a <- sqrt(mean((actual_values - predicted_model_a)^2))\nrmse_b <- sqrt(mean((actual_values - predicted_model_b)^FIXME))\nbetter_model <- FIXME",
+  evaluate_fn = evaluate_module6_cumulative_exercise
+)
+```
+
+## Module 6: Welcome back
+
+Modules 1 through 5 got you comfortable installing R, running and reading code, and cleaning up and plotting real data. From here on, the work looks a little different: instead of writing the code that produces a result, you'll often be handed a script someone else wrote -- an instructor, a teammate, an AI assistant -- and asked to run it and make sense of what it produced.
+
+This module is about that second skill: given some model's output, can you tell whether it's a good fit, and whether one model is better than another? None of this asks you to build a model yourself -- just to read the numbers and plots a model produces, the same way you've been reading error messages and grader feedback all course.
+
+## Module 6: Is it a line, or a curve?
+
+The most basic question you can ask about a relationship between two numbers -- like a fish's length and its weight -- is whether it looks like a straight line or a curve. This matters because a model that assumes a straight line (like the ones you'll see below) will systematically miss if the real relationship curves.
+
+```{r linear-demo, echo=TRUE, fig.height=3}
+plot(demo_linear_x, demo_linear_y, main = "Relationship A", xlab = "x", ylab = "y", pch = 19, col = "steelblue")
+```
+
+```{r, echo=FALSE}
+quiz_question_ui("linear_shape_quiz", "Look at \"Relationship A\" above. Does it look like a straight line or a curve?", c(
+  "A straight line" = "correct",
+  "A curve" = "wrong_curve"
+))
+```
+
+```{r curved-demo, echo=TRUE, fig.height=3}
+plot(demo_curved_x, demo_curved_y, main = "Relationship B", xlab = "x", ylab = "y", pch = 19, col = "darkorange")
+```
+
+```{r, echo=FALSE}
+quiz_question_ui("curved_shape_quiz", "Look at \"Relationship B\" above. Does it look like a straight line or a curve?", c(
+  "A curve" = "correct",
+  "A straight line" = "wrong_line"
+))
+```
+
+## Module 6: R-squared -- how much does this explain?
+
+**R-squared (R^2^)** is a number between 0 and 1 that says how much of the up-and-down variation in the outcome a model actually accounts for. An R^2^ of 0 means the model explains essentially nothing; an R^2^ of 1 means it explains all of it (rare, and often a sign something's off). Closer to 1 is generally better, but it's not the whole story -- a model can have a high R^2^ and still be the wrong shape (a straight line squeezed through curved data can still post a middling-to-decent R^2^ while clearly missing the pattern), which is why you look at both the number and the shape.
+
+```{r, echo=FALSE}
+quiz_question_ui("r_squared_quiz", "A model has an R-squared of 0.85. Another model, on the same data, has an R-squared of 0.20. Which model is explaining more of the variation in the outcome?", c(
+  "The one with R-squared = 0.85" = "correct",
+  "The one with R-squared = 0.20" = "wrong_low",
+  "They're explaining the same amount" = "wrong_same"
+))
+```
+
+## Module 6: RMSE -- how far off are the guesses?
+
+**RMSE (root mean squared error)** answers a more concrete question: on average, how far off is the model's prediction from the real value? It's in the *same units* as whatever you're predicting -- an RMSE of 12 grams means the model's guesses are typically off by around 12 grams. Lower RMSE means smaller, better predictions.
+
+Underneath, it's simple: for each prediction, subtract the actual value to get how far off it was, square those differences (so a miss in either direction counts, and big misses count extra), average the squared differences, then take the square root to get back to the original units.
+
+### Practice: compute RMSE
+
+Below, `actual_weights` and `predicted_weights` are two vectors of the same length -- real fish weights, and a model's predictions for those same fish. Compute the RMSE: the square root of the mean of the squared differences between them. Replace the `FIXME`.
+
+```{r, echo=FALSE}
+exercise_ui("rmse_exercise", "differences <- actual_weights - predicted_weights\nsqrt(mean(differences^FIXME))")
+```
+
+Stuck, or want to double check your thinking? The tutor chat below is available any time -- before you submit, after a failed attempt, or even after you've already passed.
+
+```{r, echo=FALSE}
+accordion(
+  id = "tutor_accordion_m6_1",
+  open = FALSE,
+  accordion_panel(
+    title = "Ask the Tutor",
+    chat_ui(
+      "tutor_chat_m6_1",
+      placeholder = "Ask a question about this exercise...",
+      greeting = TUTOR_CHAT_GREETING,
+      allow_attachments = FALSE
+    )
+  )
+)
+```
+
+## Module 6: Comparing two models
+
+Once you can compute RMSE (or read an R^2^) for a model, comparing two models on the *same* data and the *same* outcome is just a matter of comparing the numbers: lower RMSE wins, higher R^2^ wins. Two things trip people up here, though:
+
+- **RMSE is only comparable in the same units.** A model predicting weight in grams and one predicting weight in kilograms will have very different-looking RMSEs even if they're equally good -- you can't compare across different units or different outcomes.
+- **Always look at both models on the same held-out data.** A model that looks great on the data it was built from can still do worse on new data it hasn't seen -- which is exactly why the capstone script coming up tests each model on fish it wasn't shown.
+
+```{r, echo=FALSE}
+quiz_question_ui("rmse_compare_quiz", "Model A has an RMSE of 12 grams. Model B has an RMSE of 40 grams, predicting the same fish's weight. Which model's predictions are typically closer to the truth?", c(
+  "Model A" = "correct",
+  "Model B" = "wrong_b",
+  "Can't tell without also knowing R-squared" = "wrong_r2"
+))
+```
+
+```{r, echo=FALSE}
+quiz_question_ui("rmse_units_quiz", "Why can't you directly compare an RMSE of 0.03 (predicting weight in kilograms) to an RMSE of 30 (predicting weight in grams) and conclude the first model is way better?", c(
+  "RMSE is in the same units as what's being predicted, and kilograms and grams aren't directly comparable" = "correct",
+  "You can -- RMSE is unitless, so smaller is always better regardless of units" = "wrong_unitless",
+  "RMSE only works correctly when the units are grams" = "wrong_grams"
+))
+```
+
+## Module 6: Putting it together
+
+This exercise combines both skills from this module: computing RMSE for two models, then actually deciding which one wins.
+
+### Practice: which model wins?
+
+Below, `actual_values` holds the real weights for a small set of fish. `predicted_model_a` and `predicted_model_b` hold two different models' predictions for those same fish. Compute each model's RMSE into `rmse_a` and `rmse_b`, then assign `"A"` or `"B"` to `better_model` depending on which one actually has the lower error. Replace both `FIXME`s.
+
+```{r, echo=FALSE}
+exercise_ui("module6_cumulative_exercise", "rmse_a <- sqrt(mean((actual_values - predicted_model_a)^2))\nrmse_b <- sqrt(mean((actual_values - predicted_model_b)^FIXME))\nbetter_model <- FIXME")
+```
+
+Stuck, or want to double check your thinking? The tutor chat below is available any time -- before you submit, after a failed attempt, or even after you've already passed.
+
+```{r, echo=FALSE}
+accordion(
+  id = "tutor_accordion_m6_2",
+  open = FALSE,
+  accordion_panel(
+    title = "Ask the Tutor",
+    chat_ui(
+      "tutor_chat_m6_2",
+      placeholder = "Ask a question about this exercise...",
+      greeting = TUTOR_CHAT_GREETING,
+      allow_attachments = FALSE
+    )
+  )
+)
+```
+
+## Module 6: Wrapping up
+
+That covers the basics of judging model output: recognizing a linear vs. a curved relationship, reading R^2^ and RMSE, and comparing two models fairly. None of it required building a model yourself -- just the vocabulary and habits to make sense of one you're handed.
+
+That's exactly what the capstone preview coming up asks you to do: a real script fits two models to real fish data and prints their RMSE, and your job is to read that output and decide what it's telling you.
