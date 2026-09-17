@@ -102,12 +102,19 @@ Answer these for your overall impression across however many times you used it:
 
 ---
 
-## Screenshots and screen recordings
+## Getting help outside the course
 
-Module 1 (installing R and RStudio, the RStudio panes) is currently just text and screenshots aren't in there yet -- we're deciding whether to add real screenshots or short screen-recording clips of those steps.
+- At any point, did you look anything up outside the course -- Google, ChatGPT or another AI tool, Stack Overflow, a friend, anything at all? __
+- If yes: where in the course were you (which module or checkpoint), what were you trying to figure out, and did the course's own tutor chat not come to mind, or did you try it first and still feel like you needed more? __
 
-- Would seeing an actual screenshot (or a short clip) of an install step or an RStudio pane have made Module 1 easier to follow, or was text enough? __
-- Any specific spot where you found yourself wishing you could just *see* what it should look like? __
+---
+
+## Visuals -- screenshots, clips, diagrams, anything visual
+
+The whole course right now is text (plus code output and plots you generate). We're deciding whether adding real screenshots, short screen-recording clips, or diagrams anywhere would help -- not just in the install section, anywhere at all.
+
+- At any point in the course, would seeing an actual screenshot or a short clip (rather than just reading text) have made something easier to follow? Where, specifically? __
+- Anything else visual -- a diagram, an example of what correct output should look like, a different format entirely -- that would have helped anywhere? __
 
 ---
 

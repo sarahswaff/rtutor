@@ -668,9 +668,11 @@ before considering it fully done.
 
 ## Screenshots and screen recordings (planned, not started)
 **Deliberately sequenced AFTER the pilot, not before or during it** -- see "Current status"
-below. Rather than deciding up front whether this is worth the effort, `pilot_testing/
-checkpoints_and_feedback.md` directly asks real testers whether a screenshot or clip would
-have helped Module 1, and where -- so the decision is based on actual signal, not a guess.
+below. Rather than deciding up front whether this is worth the effort, or assuming it's only
+relevant to Module 1, `pilot_testing/checkpoints_and_feedback.md` directly asks real testers
+whether a screenshot, clip, or any other visual would have helped **anywhere in the
+course**, plus an open-ended "anything else visual that would have helped" -- so the
+decision (and its scope) is based on actual signal, not a guess about where it matters.
 
 Idea: add real screenshots and short screen recordings to `course.Rmd` for the one part of
 the course that has no live code output to speak for itself -- Module 1's "Installing R and
@@ -915,10 +917,14 @@ future module:
    tester.
 10. **Screenshots and screen recordings (see that section above) are deliberately sequenced
     AFTER the pilot, not before or during it** -- explicitly reprioritized when this came up
-    again after Module 6 was built. Rather than guessing whether Module 1's install section
-    needs visuals, `pilot_testing/checkpoints_and_feedback.md` now directly asks testers
-    whether a screenshot/clip would have helped and where -- so the decision to invest in
-    capturing/embedding media is based on real pilot signal, not assumption.
+    again after Module 6 was built. `pilot_testing/checkpoints_and_feedback.md` now directly
+    asks testers whether a screenshot/clip (or any other visual -- a diagram, example
+    output, etc.) would have helped **anywhere in the course, not just Module 1** -- the
+    question was deliberately widened after being flagged as too narrowly scoped, since
+    visuals could plausibly help in more places than just the install section. Also added,
+    same round: a question on whether testers sought help outside the course at all (Google,
+    another AI tool, a friend) and where/why -- signal on whether the in-course tutor chat is
+    actually sufficient or people route around it.
 11. DONE: added Module 7, "Extra Practice" -- ungraded, endlessly repeatable practice
     questions, added because the app owner wanted a low-stakes way to get more reps on a
     skill without waiting for a new module. Two question generators to start (vector
