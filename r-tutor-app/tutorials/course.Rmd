@@ -2308,8 +2308,34 @@ for (nm in c("actual_weights", "predicted_weights", "actual_values", "predicted_
   assign(nm, get(nm), envir = globalenv())
 }
 
-# Grading logic for this module's two exercises. log_attempt_and_maybe_open_chat()
+# Grading logic for this module's exercises. log_attempt_and_maybe_open_chat()
 # and wire_tutor_chat() themselves are shared across modules -- see R/tutor_utils.R.
+
+evaluate_lm_slope_exercise <- function(user_code, result, envir, stage) {
+  correct_model <- lm(weight_g ~ length_mm, data = fish_clean)
+  correct_slope <- unname(coef(correct_model)["length_mm"])
+  uses_lm <- grepl("lm\\s*\\(", user_code)
+  uses_coef <- grepl("coef\\s*\\(", user_code)
+  correct_result <- is.numeric(result) && length(result) == 1 && isTRUE(all.equal(as.numeric(result), correct_slope, tolerance = 0.001))
+  passed <- uses_lm && uses_coef && correct_result
+
+  feedback_message <- if (passed) {
+    paste0(
+      "Right -- the slope is about ", round(correct_slope, 3),
+      ": each extra mm of length is associated with about ", round(correct_slope, 2), " more grams of weight."
+    )
+  } else if (identical(stage, "error_check")) {
+    "That code doesn't run as-is -- check that both FIXMEs are replaced with real column names."
+  } else if (!uses_lm) {
+    "This needs an actual lm() call -- check the first FIXME is weight_g (what you're predicting) and the second is length_mm (what you're predicting it from)."
+  } else if (!uses_coef) {
+    "Once the model is fit, use coef(model) to pull out its coefficients, then [\"length_mm\"] to get just the slope."
+  } else {
+    "The model runs, but that's not quite the slope for length_mm -- double check which variable is the outcome (before ~) and which is the predictor (after ~)."
+  }
+
+  list(passed = passed, message = feedback_message)
+}
 
 evaluate_rmse_exercise <- function(user_code, result, envir, stage) {
   uses_given_vectors <- grepl("actual_weights", user_code) && grepl("predicted_weights", user_code)
@@ -2372,12 +2398,19 @@ evaluate_module6_cumulative_exercise <- function(user_code, result, envir, stage
 
 ```{r, context="server"}
 # --- Tutor chat wiring --------------------------------------------------
-wire_tutor_chat("module6_rmse", "tutor_chat_m6_1", "tutor_accordion_m6_1", "Ask the Tutor", input, output, session)
-wire_tutor_chat("module6_cumulative", "tutor_chat_m6_2", "tutor_accordion_m6_2", "Ask the Tutor", input, output, session)
+wire_tutor_chat("module6_linear_regression", "tutor_chat_m6_1", "tutor_accordion_m6_1", "Ask the Tutor", input, output, session)
+wire_tutor_chat("module6_rmse", "tutor_chat_m6_2", "tutor_accordion_m6_2", "Ask the Tutor", input, output, session)
+wire_tutor_chat("module6_cumulative", "tutor_chat_m6_3", "tutor_accordion_m6_3", "Ask the Tutor", input, output, session)
 ```
 
 ```{r, context="server"}
 # --- Quiz question wiring ------------------------------------------------
+quiz_question_server(input, output, session, "lm_output_quiz", list(
+  correct = list(correct = TRUE, message = "Correct -- that Estimate is the slope: how much weight_g changes for each 1 mm increase in length_mm."),
+  wrong_intercept = list(correct = FALSE, message = "The (Intercept) Estimate is where the line crosses when length_mm is 0 -- not how much weight_g changes per mm."),
+  wrong_r2 = list(correct = FALSE, message = "Multiple R-squared tells you how much variation the model explains overall -- it doesn't say how much weight_g changes per mm of length.")
+))
+
 quiz_question_server(input, output, session, "linear_shape_quiz", list(
   correct = list(correct = TRUE, message = "Right -- as x increases, y goes up at a roughly constant rate the whole way, which is what a straight line looks like."),
   wrong_curve = list(correct = FALSE, message = "Look again -- the rate y increases by stays about the same across the whole range of x, which is the hallmark of a straight line, not a curve.")
@@ -2410,13 +2443,19 @@ quiz_question_server(input, output, session, "rmse_units_quiz", list(
 ```{r, context="server"}
 # --- Exercise wiring -------------------------------------------------------
 exercise_server(
-  input, output, session, "rmse_exercise", "module6_rmse", "tutor_accordion_m6_1",
+  input, output, session, "lm_slope_exercise", "module6_linear_regression", "tutor_accordion_m6_1",
+  starting_code = "model <- lm(FIXME ~ FIXME, data = fish_clean)\ncoef(model)[\"length_mm\"]",
+  evaluate_fn = evaluate_lm_slope_exercise
+)
+
+exercise_server(
+  input, output, session, "rmse_exercise", "module6_rmse", "tutor_accordion_m6_2",
   starting_code = "differences <- actual_weights - predicted_weights\nsqrt(mean(differences^FIXME))",
   evaluate_fn = evaluate_rmse_exercise
 )
 
 exercise_server(
-  input, output, session, "module6_cumulative_exercise", "module6_cumulative", "tutor_accordion_m6_2",
+  input, output, session, "module6_cumulative_exercise", "module6_cumulative", "tutor_accordion_m6_3",
   starting_code = "rmse_a <- sqrt(mean((actual_values - predicted_model_a)^2))\nrmse_b <- sqrt(mean((actual_values - predicted_model_b)^FIXME))\nbetter_model <- FIXME",
   evaluate_fn = evaluate_module6_cumulative_exercise
 )
@@ -2452,6 +2491,55 @@ quiz_question_ui("curved_shape_quiz", "Look at \"Relationship B\" above. Does it
   "A curve" = "correct",
   "A straight line" = "wrong_line"
 ))
+```
+
+## Module 6: Linear regression
+
+A **linear regression** is the actual straight-line model behind "is it a line, or a curve?" -- it finds the single best-fitting straight line through your data. In R, `lm(y ~ x, data = ...)` fits one for you, and `summary()` shows what it found.
+
+```{r lm-demo, echo=TRUE}
+model <- lm(weight_g ~ length_mm, data = fish_clean)
+summary(model)
+```
+
+A few pieces of that printout matter most:
+
+- Under **Coefficients**, the **Estimate** in the `length_mm` row is the **slope** -- how much `weight_g` typically changes for each extra 1 mm of `length_mm`.
+- The **Estimate** in the `(Intercept)` row is where the line would cross if `length_mm` were 0 -- part of the line's equation, but not always meaningful on its own (no real fish has 0 length).
+- **Multiple R-squared** near the bottom is the same R^2^ you'll read about next -- how much of the variation in `weight_g` this line accounts for.
+
+```{r, echo=FALSE}
+quiz_question_ui("lm_output_quiz", "In the printout above, which number tells you how much weight_g changes for each extra mm of length_mm?", c(
+  "The Estimate in the length_mm row" = "correct",
+  "The Estimate in the (Intercept) row" = "wrong_intercept",
+  "The Multiple R-squared value" = "wrong_r2"
+))
+```
+
+### Practice: fit a model and read its slope
+
+Below, fit a linear regression predicting `weight_g` from `length_mm` using `fish_clean`, then use `coef()` to pull out just the slope (the `length_mm` estimate). Replace both `FIXME`s.
+
+```{r, echo=FALSE}
+exercise_ui("lm_slope_exercise", "model <- lm(FIXME ~ FIXME, data = fish_clean)\ncoef(model)[\"length_mm\"]")
+```
+
+Stuck, or want to double check your thinking? The tutor chat below is available any time -- before you submit, after a failed attempt, or even after you've already passed.
+
+```{r, echo=FALSE}
+accordion(
+  id = "tutor_accordion_m6_1",
+  open = FALSE,
+  accordion_panel(
+    title = "Ask the Tutor",
+    chat_ui(
+      "tutor_chat_m6_1",
+      placeholder = "Ask a question about this exercise...",
+      greeting = TUTOR_CHAT_GREETING,
+      allow_attachments = FALSE
+    )
+  )
+)
 ```
 
 ## Module 6: R-squared -- how much does this explain?
@@ -2498,12 +2586,12 @@ Stuck, or want to double check your thinking? The tutor chat below is available 
 
 ```{r, echo=FALSE}
 accordion(
-  id = "tutor_accordion_m6_1",
+  id = "tutor_accordion_m6_2",
   open = FALSE,
   accordion_panel(
     title = "Ask the Tutor",
     chat_ui(
-      "tutor_chat_m6_1",
+      "tutor_chat_m6_2",
       placeholder = "Ask a question about this exercise...",
       greeting = TUTOR_CHAT_GREETING,
       allow_attachments = FALSE
@@ -2551,12 +2639,12 @@ Stuck, or want to double check your thinking? The tutor chat below is available 
 
 ```{r, echo=FALSE}
 accordion(
-  id = "tutor_accordion_m6_2",
+  id = "tutor_accordion_m6_3",
   open = FALSE,
   accordion_panel(
     title = "Ask the Tutor",
     chat_ui(
-      "tutor_chat_m6_2",
+      "tutor_chat_m6_3",
       placeholder = "Ask a question about this exercise...",
       greeting = TUTOR_CHAT_GREETING,
       allow_attachments = FALSE
@@ -2572,38 +2660,50 @@ That covers the basics of judging model output -- none of it required building a
 **If you remember only a few things from this module:**
 
 - Look at the shape of the data before trusting a straight-line model -- a curve squeezed into a line will systematically miss.
+- `lm(y ~ x, data = ...)` fits a line, and `summary()` shows it -- the Estimate next to your predictor is the slope, and Multiple R-squared near the bottom is the same R^2^ below.
 - RMSE is in the *same units* as what you're predicting, and lower is better; R^2^ is a 0-1 fraction of variation explained, and closer to 1 is better.
 - Always compare two models on the same held-out data they weren't trained on -- looking good on data a model has already seen doesn't count.
 
 That's exactly what the capstone preview coming up asks you to do: a real script fits two models to real fish data and prints their RMSE, and your job is to read that output and decide what it's telling you.
 
 ```{r setup-module7, context="setup", include=FALSE}
-# Question generators for the Extra Practice module, one per module (2-6)
-# for this BETA version -- one question type per module, deliberately
-# mirroring content that module already teaches. A later pass (after beta
-# feedback) will add MORE generators per module, including types not tied
-# to any of that module's actual graded exercises, per the app owner's
-# explicit direction: practice questions should draw on everything a
+# Question generators for the Extra Practice module. Each module (2-6) now
+# has a POOL of generators -- module_practice_server() picks one at random
+# from the current module's pool every time a new question is requested
+# (module switch or "New Question" click) -- deliberately mixing types
+# tied to that module's own graded exercises with types that AREN'T, per
+# the app owner's explicit direction: practice should draw on everything a
 # module taught, not just repeat its existing exercise shapes.
 #
-# Each generator is a zero-argument function, called fresh every time a new
-# question is requested (a module switch or a "New Question" click),
-# returning list(prompt=, starting_code=, check=). See module_practice_ui()/
+# Each generator is a zero-argument function returning list(prompt=,
+# starting_code=, has_plot_output= [optional, default FALSE], check=).
+# `check` is called as check(user_code, result, envir, stage) -- exactly
+# like exercise_server()'s evaluate_fn -- so a generator whose question can
+# genuinely error (e.g. a "fix the bug" type) can give a specific hint on
+# "error_check" rather than a generic message. See module_practice_ui()/
 # module_practice_server() in R/tutor_utils.R for the full contract -- in
 # particular, why the random values below are baked directly into
 # `prompt`/`starting_code` as literal text rather than stored in a shared
 # variable: this data is per-question, not identical across every student's
 # session the way e.g. Module 4's fish_clean is, so it can't safely live in
-# globalenv() the way that reference data does.
+# globalenv() the way that reference data does. (Relatedly: a generator
+# must NEVER have its questions call library() -- attaching a package is a
+# process-wide side effect in R, not scoped to eval()'s envir argument, so
+# it would leak across every concurrent student's session.)
 
-generate_module2_practice <- function() {
+# ---- Module 2 pool ----------------------------------------------------
+
+generate_module2_comment_practice <- function() {
   keep_msg <- sample(c("Keep this one running", "Do not touch this line", "This line should stay active"), 1)
   comment_msg <- sample(c("Turn this into a comment", "This line should not run", "Comment this one out"), 1)
 
   list(
     prompt = sprintf('Below, comment out the SECOND line only (the one that says "%s"), so it does not run -- without deleting it or changing the first line.', comment_msg),
     starting_code = sprintf('print("%s")\nprint("%s")', keep_msg, comment_msg),
-    check = function(user_code, result, envir) {
+    check = function(user_code, result, envir, stage) {
+      if (identical(stage, "error_check")) {
+        return(list(passed = FALSE, message = "That code doesn't run as-is -- check that both lines are still valid R (or safely commented out)."))
+      }
       keep_active <- grepl(paste0('(?m)^\\s*print\\("', keep_msg, '"\\)\\s*$'), user_code, perl = TRUE)
       comment_present <- grepl(paste0('(?m)^\\s*#.*', comment_msg), user_code, perl = TRUE)
       comment_still_active <- grepl(paste0('(?m)^\\s*print\\("', comment_msg, '"\\)\\s*$'), user_code, perl = TRUE)
@@ -2623,12 +2723,39 @@ generate_module2_practice <- function() {
   )
 }
 
-generate_module3_practice <- function() {
+generate_module2_fix_bug_practice <- function() {
+  # NOT tied to either of Module 2's own graded exercises (comment-out,
+  # fix-the-bug's specific wording) -- a fresh set of syntax bugs, framed
+  # around "reading an error message" rather than reproducing the exact
+  # graded exercise. Genuinely errors until fixed, so the error_check
+  # branch below is what actually shows while the student is still working.
+  bugs <- list(
+    list(broken = 'print("Nice to meet you)', hint = "a closing quote", correct = "Nice to meet you"),
+    list(broken = "sum(4, 8, 15", hint = "a closing parenthesis", correct = 27),
+    list(broken = "mean(c(10, 20, 30)", hint = "a closing parenthesis", correct = 20)
+  )
+  chosen <- bugs[[sample(seq_along(bugs), 1)]]
+
+  list(
+    prompt = sprintf("The line below has a bug and won't run -- it's missing %s. Fix it so it runs without an error.", chosen$hint),
+    starting_code = chosen$broken,
+    check = function(user_code, result, envir, stage) {
+      if (identical(stage, "error_check")) {
+        return(list(passed = FALSE, message = sprintf("Still doesn't run -- look closely for %s.", chosen$hint)))
+      }
+      passed <- isTRUE(all.equal(result, chosen$correct))
+      message <- if (passed) "Correct -- that runs cleanly now." else "It runs now, but the result doesn't look right -- check you didn't change anything besides fixing the bug."
+      list(passed = passed, message = message)
+    }
+  )
+}
+
+# ---- Module 3 pool ----------------------------------------------------
+
+generate_module3_vector_practice <- function() {
   # Difficulty lever used here: no FIXME -- the code box starts with just
   # the vector itself, and the student writes the whole indexing
-  # expression from scratch. (See the app owner's explicit direction that
-  # difficulty should vary across questions -- some keep a FIXME, some
-  # don't, some combine skills, some just use bigger/messier inputs.)
+  # expression from scratch.
   n <- sample(4:7, 1)
   values <- sample(1:50, n)
   idx <- sample(seq_len(n), 1)
@@ -2641,7 +2768,10 @@ generate_module3_practice <- function() {
       value_str, idx
     ),
     starting_code = sprintf("practice_vec <- c(%s)\n", value_str),
-    check = function(user_code, result, envir) {
+    check = function(user_code, result, envir, stage) {
+      if (identical(stage, "error_check")) {
+        return(list(passed = FALSE, message = "That code doesn't run as-is -- check your syntax."))
+      }
       uses_vec <- grepl("practice_vec", user_code)
       uses_index <- grepl("\\[", user_code)
       correct_result <- is.numeric(result) && length(result) == 1 && isTRUE(result == correct)
@@ -2661,7 +2791,104 @@ generate_module3_practice <- function() {
   )
 }
 
-generate_module4_practice <- function() {
+generate_module3_formula_practice <- function() {
+  # Tied to Module 3's own "Turning a formula into code" exercise, but with
+  # 3 different formulas randomized between -- reinforces the same skill
+  # with real variety rather than the exact same formula every time.
+  templates <- list(
+    function() {
+      l <- sample(2:20, 1)
+      w <- sample(2:20, 1)
+      correct <- l * w
+      list(
+        prompt = sprintf("The area of a rectangle is A = l x w. If l = %d and w = %d, write code that computes A.", l, w),
+        starting_code = sprintf("l <- %d\nw <- %d\nFIXME", l, w),
+        check = function(user_code, result, envir, stage) {
+          if (identical(stage, "error_check")) return(list(passed = FALSE, message = "That code doesn't run as-is -- check that FIXME is replaced with a complete expression."))
+          passed <- is.numeric(result) && length(result) == 1 && isTRUE(result == correct)
+          list(passed = passed, message = if (passed) sprintf("Correct -- the area is %d.", correct) else "Not quite -- check the formula A = l * w.")
+        }
+      )
+    },
+    function() {
+      a <- sample(3:15, 1)
+      b <- sample(3:15, 1)
+      correct <- sqrt(a^2 + b^2)
+      list(
+        prompt = sprintf("Using the Pythagorean theorem c = sqrt(a^2 + b^2), with a = %d and b = %d, write code that computes c.", a, b),
+        starting_code = sprintf("a <- %d\nb <- %d\nFIXME", a, b),
+        check = function(user_code, result, envir, stage) {
+          if (identical(stage, "error_check")) return(list(passed = FALSE, message = "That code doesn't run as-is -- check that FIXME is replaced with a complete expression."))
+          uses_sqrt <- grepl("sqrt\\s*\\(", user_code)
+          correct_result <- is.numeric(result) && length(result) == 1 && isTRUE(all.equal(result, correct, tolerance = 0.001))
+          passed <- uses_sqrt && correct_result
+          message <- if (passed) {
+            sprintf("Correct -- c is about %.2f.", correct)
+          } else if (!uses_sqrt) {
+            "Don't forget the square root -- this formula needs sqrt()."
+          } else {
+            "Not quite -- check that both a and b are squared before adding them."
+          }
+          list(passed = passed, message = message)
+        }
+      )
+    },
+    function() {
+      celsius <- sample(-10:40, 1)
+      correct <- celsius * 9 / 5 + 32
+      list(
+        prompt = sprintf("Using F = C x 9/5 + 32, with C = %d, write code that computes F.", celsius),
+        starting_code = sprintf("celsius <- %d\nFIXME", celsius),
+        check = function(user_code, result, envir, stage) {
+          if (identical(stage, "error_check")) return(list(passed = FALSE, message = "That code doesn't run as-is -- check that FIXME is replaced with a complete expression."))
+          passed <- is.numeric(result) && length(result) == 1 && isTRUE(all.equal(result, correct, tolerance = 0.01))
+          list(passed = passed, message = if (passed) sprintf("Correct -- that's %.1f°F.", correct) else "Not quite -- check the formula F = C * 9/5 + 32.")
+        }
+      )
+    }
+  )
+  templates[[sample(seq_along(templates), 1)]]()
+}
+
+generate_module3_datatype_practice <- function() {
+  # NOT tied to any of Module 3's graded exercises -- "data types" is
+  # taught (the module's very first topic) but never itself graded.
+  cases <- list(
+    list(value_code = "42", type_fn = "is.numeric", label = "a number"),
+    list(value_code = '"hello"', type_fn = "is.character", label = "text (a string)"),
+    list(value_code = "TRUE", type_fn = "is.logical", label = "a logical (TRUE/FALSE) value")
+  )
+  chosen <- cases[[sample(seq_along(cases), 1)]]
+
+  list(
+    prompt = sprintf(
+      "Given practice_value <- %s, write code that checks whether practice_value is %s -- it should return TRUE.",
+      chosen$value_code, chosen$label
+    ),
+    starting_code = sprintf("practice_value <- %s\n", chosen$value_code),
+    check = function(user_code, result, envir, stage) {
+      if (identical(stage, "error_check")) return(list(passed = FALSE, message = "That code doesn't run as-is -- check your syntax."))
+      uses_value <- grepl("practice_value", user_code)
+      uses_fn <- grepl(paste0(chosen$type_fn, "\\s*\\("), user_code)
+      correct_result <- is.logical(result) && length(result) == 1 && isTRUE(result == TRUE)
+      passed <- uses_value && uses_fn && correct_result
+      message <- if (passed) {
+        sprintf("Correct -- %s(practice_value) is TRUE.", chosen$type_fn)
+      } else if (!uses_fn) {
+        sprintf("Try using %s() -- that's the function that checks for this type.", chosen$type_fn)
+      } else if (!uses_value) {
+        "This should check practice_value directly, not a typed-in value."
+      } else {
+        "Not quite -- double check which function tests for this type."
+      }
+      list(passed = passed, message = message)
+    }
+  )
+}
+
+# ---- Module 4 pool ----------------------------------------------------
+
+generate_module4_pipeline_practice <- function() {
   # Difficulty lever used here: combine multiple skills, no FIXME -- a
   # full cumulative pipeline (filter, group_by, summarize, arrange -- all
   # four, like Module 4's own cumulative exercise), on a bigger table with
@@ -2694,7 +2921,8 @@ generate_module4_practice <- function() {
       "practice_df <- data.frame(fruit = c(%s), store = c(%s), count = c(%s))\n",
       fruit_str, store_str, count_str
     ),
-    check = function(user_code, result, envir) {
+    check = function(user_code, result, envir, stage) {
+      if (identical(stage, "error_check")) return(list(passed = FALSE, message = "That code doesn't run as-is -- work through it one step at a time."))
       uses_filter <- grepl("filter\\s*\\(", user_code)
       uses_group_by <- grepl("group_by\\s*\\(", user_code)
       uses_summarize <- grepl("summari[sz]e\\s*\\(", user_code)
@@ -2721,10 +2949,72 @@ generate_module4_practice <- function() {
   )
 }
 
-generate_module5_practice <- function() {
-  # Difficulty lever used here: combine multiple skills, no FIXME -- a
-  # cumulative pipeline like Module 5's own (filter + plot + title), with
-  # an added category column to filter on.
+generate_module4_indexing_practice <- function() {
+  # Tied to Module 4's own indexing exercise, but square-bracket indexing
+  # (not dplyr) on fresh data -- reinforces the base-R alternative dplyr is
+  # usually preferred over, which the module explicitly calls out.
+  sites <- c("North Lake", "South Lake", "East Pond")
+  target_site <- sample(sites, 1)
+  n <- sample(6:9, 1)
+  site_col <- sample(sites, n, replace = TRUE)
+  weight_col <- sample(50:400, n)
+  correct_n <- sum(site_col == target_site)
+
+  site_str <- paste(sprintf('"%s"', site_col), collapse = ", ")
+  weight_str <- paste(weight_col, collapse = ", ")
+
+  list(
+    prompt = sprintf(
+      'practice_df has site and weight columns. Using square-bracket indexing (practice_df[...]), NOT a dplyr verb, return only the rows where site equals "%s".',
+      target_site
+    ),
+    starting_code = sprintf("practice_df <- data.frame(site = c(%s), weight = c(%s))\n", site_str, weight_str),
+    check = function(user_code, result, envir, stage) {
+      if (identical(stage, "error_check")) return(list(passed = FALSE, message = "That code doesn't run as-is -- check the brackets and commas."))
+      uses_bracket <- grepl("\\[", user_code)
+      not_dplyr <- !grepl("filter\\s*\\(", user_code)
+      correct_result <- is.data.frame(result) && nrow(result) == correct_n && all(result$site == target_site)
+      passed <- uses_bracket && not_dplyr && correct_result
+      message <- if (passed) {
+        sprintf('Correct -- %d rows match "%s".', correct_n, target_site)
+      } else if (!not_dplyr) {
+        "Use square-bracket indexing here (practice_df[ ... , ]), not a dplyr verb -- that's the point of this one."
+      } else if (!uses_bracket) {
+        "Use square brackets, like practice_df[practice_df$site == ..., ]."
+      } else {
+        sprintf('Not quite -- double check the row count and that only "%s" rows are included.', target_site)
+      }
+      list(passed = passed, message = message)
+    }
+  )
+}
+
+generate_module4_inspect_practice <- function() {
+  # NOT tied to any of Module 4's graded exercises -- "Inspecting a data
+  # frame" is its own taught topic with no dedicated exercise of its own.
+  n <- sample(8:20, 1)
+  values <- round(runif(n, 1, 100), 1)
+  value_str <- paste(values, collapse = ", ")
+  col_name <- sample(c("weight", "length", "score", "amount"), 1)
+
+  list(
+    prompt = sprintf("practice_df has one column, %s, with %d rows. Write code that returns the number of rows in practice_df.", col_name, n),
+    starting_code = sprintf("practice_df <- data.frame(%s = c(%s))\n", col_name, value_str),
+    check = function(user_code, result, envir, stage) {
+      if (identical(stage, "error_check")) return(list(passed = FALSE, message = "That code doesn't run as-is -- check your syntax."))
+      passed <- is.numeric(result) && length(result) == 1 && isTRUE(result == n)
+      message <- if (passed) sprintf("Correct -- practice_df has %d rows.", n) else "Not quite -- try nrow(practice_df)."
+      list(passed = passed, message = message)
+    }
+  )
+}
+
+# ---- Module 5 pool ----------------------------------------------------
+
+generate_module5_scaffolded_practice <- function() {
+  # More scaffolding than the beta version had -- FIXME blanks are back,
+  # not a blank-slate rewrite. Still combines filter + plot + title (like
+  # Module 5's own cumulative exercise), on an added category column.
   categories <- c("A", "B", "C")
   n <- sample(24:36, 1)
   cat_col <- sample(categories, n, replace = TRUE)
@@ -2738,50 +3028,97 @@ generate_module5_practice <- function() {
 
   list(
     prompt = sprintf(
-      'practice_df has columns category, x, and y. Filter down to just category "%s", then create a scatter plot of x vs. y with any title you like. (No FIXME -- write the full pipeline yourself: filter(), then ggplot() + geom_point() + labs(title = ...).)',
+      'practice_df has columns category, x, and y. Filter down to just category "%s", then create a scatter plot of x vs. y with any title you like. Replace all three FIXMEs.',
       target_cat
     ),
     starting_code = sprintf(
-      "practice_df <- data.frame(category = c(%s), x = c(%s), y = c(%s))\n",
+      "practice_df <- data.frame(category = c(%s), x = c(%s), y = c(%s))\npractice_df |>\n  filter(category == FIXME) |>\n  ggplot(aes(x = FIXME, y = FIXME)) +\n  geom_point() +\n  labs(title = FIXME)",
       cat_str, x_str, y_str
     ),
-    check = function(user_code, result, envir) {
+    has_plot_output = TRUE,
+    check = function(user_code, result, envir, stage) {
+      if (identical(stage, "error_check")) return(list(passed = FALSE, message = "That code doesn't run as-is -- work through it one FIXME at a time."))
       uses_filter <- grepl("filter\\s*\\(", user_code)
-      uses_geom_point <- grepl("geom_point\\s*\\(", user_code)
-      uses_labs <- grepl("labs\\s*\\(", user_code)
       is_ggplot <- inherits(result, "ggplot")
       has_point_layer <- is_ggplot && any(vapply(result$layers, function(l) inherits(l$geom, "GeomPoint"), logical(1)))
       right_n <- is_ggplot && is.data.frame(result$data) && nrow(result$data) == sum(cat_col == target_cat)
       x_ok <- is_ggplot && identical(rlang::as_label(result$mapping$x), "x")
       y_ok <- is_ggplot && identical(rlang::as_label(result$mapping$y), "y")
       has_title <- is_ggplot && is.character(result$labels$title) && nzchar(trimws(result$labels$title))
-      passed <- uses_filter && uses_geom_point && uses_labs && is_ggplot && has_point_layer && right_n && x_ok && y_ok && has_title
+      passed <- uses_filter && is_ggplot && has_point_layer && right_n && x_ok && y_ok && has_title
 
       message <- if (passed) {
         sprintf('Correct -- filtered to "%s", plotted, and titled.', target_cat)
       } else if (!uses_filter || !right_n) {
-        sprintf('Check the filter() step -- this should only include the "%s" rows.', target_cat)
-      } else if (!is_ggplot) {
-        "This should produce a ggplot object -- make sure ggplot(..., aes(...)) starts the plotting expression."
+        sprintf('Check the filter() FIXME -- this should only include the "%s" rows.', target_cat)
       } else if (!has_point_layer) {
         "This needs a geom_point() layer."
       } else if (!x_ok) {
-        "The x-axis isn't mapped to x yet."
+        "The x-axis FIXME isn't mapped to x yet."
       } else if (!y_ok) {
-        "The y-axis isn't mapped to y yet."
+        "The y-axis FIXME isn't mapped to y yet."
       } else {
-        "The plot looks right, but it still needs a title -- add labs(title = \"...\") with any title you like."
+        "The plot looks right, but the title FIXME still needs replacing -- any text in quotes works."
       }
       list(passed = passed, message = message)
     }
   )
 }
 
-generate_module6_practice <- function() {
-  # Difficulty lever used here: bigger/messier inputs -- more cases,
-  # decimal values, rather than a handful of clean round numbers. Keeps
-  # the FIXME, since the skill being tested (the RMSE formula) is the
-  # same one just taught, not something to also strip scaffolding from.
+generate_module5_fix_plot_practice <- function() {
+  # NOT tied to any of Module 5's graded exercises -- all of those are
+  # "fill in the FIXME" style; this is "find and fix the bug" instead,
+  # closer to how ggplot code gets used in practice (reading/adjusting
+  # something already mostly written, not composing from a blank page).
+  n <- sample(15:25, 1)
+  x_vals <- round(runif(n, 1, 50), 1)
+  y_vals <- round(x_vals * runif(1, 0.5, 2) + rnorm(n, sd = 5), 1)
+  x_str <- paste(x_vals, collapse = ", ")
+  y_str <- paste(y_vals, collapse = ", ")
+
+  bugs <- list(
+    list(
+      broken = sprintf("practice_df <- data.frame(x = c(%s), y = c(%s))\nggplot(practice_df, aes(x = x, y = y)) +\n  geom_pont()", x_str, y_str),
+      hint = "the geom function name is misspelled"
+    ),
+    list(
+      broken = sprintf("practice_df <- data.frame(x = c(%s), y = c(%s))\nggplot(practice_df, aes(x = y, y = x)) +\n  geom_point()", x_str, y_str),
+      hint = "x and y are mapped to the wrong columns"
+    )
+  )
+  chosen <- bugs[[sample(seq_along(bugs), 1)]]
+
+  list(
+    prompt = sprintf("The scatter plot code below has a bug -- %s. Find and fix it so it correctly plots x vs. y.", chosen$hint),
+    starting_code = chosen$broken,
+    has_plot_output = TRUE,
+    check = function(user_code, result, envir, stage) {
+      if (identical(stage, "error_check")) return(list(passed = FALSE, message = sprintf("Still doesn't run -- remember, %s.", chosen$hint)))
+      is_ggplot <- inherits(result, "ggplot")
+      has_point_layer <- is_ggplot && any(vapply(result$layers, function(l) inherits(l$geom, "GeomPoint"), logical(1)))
+      x_ok <- is_ggplot && identical(rlang::as_label(result$mapping$x), "x")
+      y_ok <- is_ggplot && identical(rlang::as_label(result$mapping$y), "y")
+      passed <- is_ggplot && has_point_layer && x_ok && y_ok
+      message <- if (passed) {
+        "Correct -- fixed and plotting x vs. y properly now."
+      } else if (!has_point_layer) {
+        "Still not drawing points -- check the geom function name."
+      } else {
+        "Close, but x and y still aren't mapped correctly."
+      }
+      list(passed = passed, message = message)
+    }
+  )
+}
+
+# ---- Module 6 pool ----------------------------------------------------
+
+generate_module6_rmse_practice <- function() {
+  # More scaffolding than the beta version had: a formula reminder comment
+  # is back in the starting code, since the point of repeated practice is
+  # applying the idea quickly, not re-deriving the formula from memory
+  # every single rep. Bigger/messier inputs (from the beta hardening pass)
+  # are kept.
   n <- sample(8:12, 1)
   actual <- round(runif(n, 15, 250), 1)
   predicted <- round(actual + rnorm(n, sd = 12), 1)
@@ -2792,15 +3129,47 @@ generate_module6_practice <- function() {
   list(
     prompt = "practice_actual and practice_predicted are a model's actual and predicted values for the same cases. Compute the RMSE.",
     starting_code = sprintf(
-      "practice_actual <- c(%s)\npractice_predicted <- c(%s)\nsqrt(mean((practice_actual - practice_predicted)^FIXME))",
+      "# Reminder: RMSE = sqrt(mean((actual - predicted)^2))\npractice_actual <- c(%s)\npractice_predicted <- c(%s)\nsqrt(mean((practice_actual - practice_predicted)^FIXME))",
       actual_str, predicted_str
     ),
-    check = function(user_code, result, envir) {
+    check = function(user_code, result, envir, stage) {
+      if (identical(stage, "error_check")) return(list(passed = FALSE, message = "That code doesn't run as-is -- check that FIXME is replaced with a number."))
       correct_result <- is.numeric(result) && length(result) == 1 && isTRUE(all.equal(as.numeric(result), correct, tolerance = 0.01))
       message <- if (correct_result) {
         sprintf("Correct -- RMSE is about %.2f.", correct)
       } else {
-        "Not quite -- check the RMSE formula: square the differences, average them, then take the square root."
+        "Not quite -- check the RMSE formula in the reminder comment above."
+      }
+      list(passed = correct_result, message = message)
+    }
+  )
+}
+
+generate_module6_rsquared_practice <- function() {
+  # NOT tied to any of Module 6's graded exercises -- R-squared is taught
+  # (with its own formula/MathJax section) but never itself graded; both
+  # exercises are RMSE-based. Scaffolded with the same formula-reminder
+  # pattern as the RMSE generator above.
+  n <- sample(8:12, 1)
+  actual <- round(runif(n, 15, 250), 1)
+  predicted <- round(actual + rnorm(n, sd = 12), 1)
+  correct <- 1 - sum((actual - predicted)^2) / sum((actual - mean(actual))^2)
+  actual_str <- paste(actual, collapse = ", ")
+  predicted_str <- paste(predicted, collapse = ", ")
+
+  list(
+    prompt = "practice_actual and practice_predicted are a model's actual and predicted values for the same cases. Compute R-squared.",
+    starting_code = sprintf(
+      "# Reminder: R-squared = 1 - sum((actual - predicted)^2) / sum((actual - mean(actual))^2)\npractice_actual <- c(%s)\npractice_predicted <- c(%s)\nFIXME",
+      actual_str, predicted_str
+    ),
+    check = function(user_code, result, envir, stage) {
+      if (identical(stage, "error_check")) return(list(passed = FALSE, message = "That code doesn't run as-is -- check that FIXME is replaced with a complete expression."))
+      correct_result <- is.numeric(result) && length(result) == 1 && isTRUE(all.equal(as.numeric(result), correct, tolerance = 0.01))
+      message <- if (correct_result) {
+        sprintf("Correct -- R-squared is about %.3f.", correct)
+      } else {
+        "Not quite -- check the R-squared formula in the reminder comment above."
       }
       list(passed = correct_result, message = message)
     }
@@ -2808,11 +3177,11 @@ generate_module6_practice <- function() {
 }
 
 MODULE_PRACTICE_GENERATORS <- list(
-  "2" = list(generate_fn = generate_module2_practice, has_plot_output = FALSE),
-  "3" = list(generate_fn = generate_module3_practice, has_plot_output = FALSE),
-  "4" = list(generate_fn = generate_module4_practice, has_plot_output = FALSE),
-  "5" = list(generate_fn = generate_module5_practice, has_plot_output = TRUE),
-  "6" = list(generate_fn = generate_module6_practice, has_plot_output = FALSE)
+  "2" = list(generate_module2_comment_practice, generate_module2_fix_bug_practice),
+  "3" = list(generate_module3_vector_practice, generate_module3_formula_practice, generate_module3_datatype_practice),
+  "4" = list(generate_module4_pipeline_practice, generate_module4_indexing_practice, generate_module4_inspect_practice),
+  "5" = list(generate_module5_scaffolded_practice, generate_module5_fix_plot_practice),
+  "6" = list(generate_module6_rmse_practice, generate_module6_rsquared_practice)
 )
 ```
 

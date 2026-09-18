@@ -101,11 +101,13 @@ r-tutor-app/
    ggplot exercises (scatter, bar from a dplyr summary, histogram, filtered+titled
    cumulative) plus quiz-only awareness content for everything else, since none of the
    file-naming/Markdown/version-control content involves writing new code.
-6. **Interpreting Model Output** -- recognizing linear vs. curved relationships, reading
-   R^2^ and RMSE, comparing two models' predictions. Added after Modules 1-5 (see "Current
-   status" below). Deliberately does NOT involve building a model -- that's still out of
-   scope for the tutorial itself (see below). DONE -- 2 graded exercises (compute RMSE;
-   decide which of two models wins), each with its own tutor chat.
+6. **Interpreting Model Output** -- recognizing linear vs. curved relationships, fitting and
+   reading a real `lm()`/`summary()` printout, reading R^2^ and RMSE, comparing two models'
+   predictions. Added after Modules 1-5 (see "Current status" below). Deliberately does NOT
+   involve building a model beyond `lm()` itself -- more advanced modeling is still out of
+   scope for the tutorial (see below). DONE -- 3 graded exercises (fit a linear regression
+   and read its slope; compute RMSE; decide which of two models wins), each with its own
+   tutor chat.
 7. **Extra Practice** -- ungraded, endlessly-repeatable practice questions (see "Current
    status" below for the mechanism). NOT part of the graded curriculum sequence -- no
    `exercises` rows, no `exercise_attempts`/`chat_logs` logging, and deliberately not gated
@@ -1038,20 +1040,101 @@ future module:
     effect. The dashboard's Chats tab (student/exercise pickers, transcript viewer) would
     need updating to surface practice-module chats as a distinct, clearly-labeled category
     alongside real exercise titles, not merged into them. None of this is built yet.
-16. Remaining:
+16. DONE: expanded every module's practice pool from 1 generator to several (2-3 each,
+    12 total), deliberately mixing types tied to that module's own graded exercises with
+    types that AREN'T -- the "after beta feedback" expansion from item 15's Remaining list,
+    done sooner once the app owner gave the go-ahead. `MODULE_PRACTICE_GENERATORS` changed
+    shape accordingly: each module now maps to a PLAIN LIST of generators (a pool), and
+    `module_practice_server()` (`R/tutor_utils.R`) picks one at random every time a new
+    question is requested -- see that function's docstring for the full updated contract.
+    Also addressed specific scaffolding feedback for Modules 5 and 6 in the same pass (the
+    app owner's read: full free-form ggplot-writing isn't that realistic a skill to drill --
+    "no one really generates ggplot code on their own anymore" -- and Module 6 needed more
+    support too):
+    - **Module 2** (2 generators): existing comment-out, plus a NEW "fix the bug" type
+      (missing quote/parenthesis, genuinely errors until fixed) -- untied to either of
+      Module 2's own graded exercises.
+    - **Module 3** (3 generators): existing hardened vector-indexing, the formula-practice
+      generator REVIVED (deleted in the beta difficulty pass, brought back here since "more
+      types" now covers what deleting it was trying to avoid), plus a NEW data-type check
+      (`is.numeric()`/`is.character()`/`is.logical()`) -- untied, since "data types" is
+      taught but never itself graded.
+    - **Module 4** (3 generators): existing hardened cumulative pipeline, plus a NEW
+      square-bracket indexing generator (tied to `module4_indexing` but fresh data) and a
+      NEW "inspect a data frame" generator (`nrow()`) -- untied, since that's a taught topic
+      with no graded exercise of its own.
+    - **Module 5** (2 generators): the free-form cumulative generator was REPLACED with a
+      scaffolded version (FIXME blanks are back) per the scaffolding feedback, plus a NEW
+      "fix the plot" type (given nearly-correct ggplot code with one bug -- misspelled geom,
+      or x/y swapped -- find and fix it). The "fix" framing was a deliberate response to the
+      "no one writes ggplot from scratch" feedback: closer to how it's actually used
+      (adjusting something mostly-written) than composing from a blank page.
+    - **Module 6** (2 generators): the RMSE generator gained a formula-reminder comment in
+      its starting code (scaffolding feedback -- repeated practice should mean applying the
+      idea quickly, not re-deriving the formula from memory every rep), plus a NEW R-squared
+      generator (same formula-reminder pattern) -- untied, since R^2^ is taught with its own
+      MathJax section but never itself graded; both of Module 6's real exercises are
+      RMSE-based.
+    **Two real things caught and fixed while building this:**
+    - `check()`'s contract changed to `check(user_code, result, envir, stage)` -- matching
+      exercise_server()'s evaluate_fn exactly -- because `module_practice_server()`'s
+      earlier version skipped calling `check()` at all on a genuine error (generic "Error:
+      ..." passthrough only). That's fine for question types where errors aren't part of the
+      design, but the new "fix the bug"/"fix the plot" types genuinely error until fixed, and
+      need their own specific hint on the error_check stage rather than R's raw parse-error
+      text alone. Confirmed working: submitting the still-broken code for both new "fix"
+      types shows the raw error AND the custom hint together; fixing it correctly shows the
+      normal success message.
+    - A wording bug found live-testing: the "fix the bug" hints (`"a missing closing
+      quote"`) were being substituted into a template that ALSO said "missing" (`"it's
+      missing %s"`), producing "it's missing a missing closing quote." Fixed by trimming the
+      hint text to `"a closing quote"`/`"a closing parenthesis"` so each template only says
+      "missing" once. A near-identical issue in "fix the plot"'s error-stage message
+      (`"look for %s"` + a full-clause hint reading as broken grammar) was fixed the same
+      way, rewording the template to `"remember, %s"` instead.
+    Tested locally: all 12 generators individually confirmed (cycling module switches/"New
+    Question" until each was seen), including both new error-generating types' fail-then-fix
+    paths and Module 5's plot rendering for both of its generators.
+17. DONE: added a dedicated **"Linear regression"** topic and its own graded exercise to
+    Module 6, right after "Is it a line, or a curve?" and before "R-squared" -- flagged as
+    imperative by the app owner: a module literally named "Interpreting Model Output" never
+    actually fit a real model or showed real `lm()`/`summary()` output anywhere in the app
+    itself (only the standalone pilot capstone script did that, outside the app). Now:
+    - A real `lm(weight_g ~ length_mm, data = fish_clean)` + `summary(model)` demo, with the
+      printout walked through piece by piece (the `length_mm` row's Estimate = slope, the
+      `(Intercept)` row, Multiple R-squared).
+    - A quiz on reading that printout (`lm_output_quiz`).
+    - A graded exercise, `module6_linear_regression` (exercise_id 22, order_index 1 -- the
+      existing `module6_rmse`/`module6_cumulative` were bumped to order_index 2/3): fit the
+      model with the correct formula direction, then `coef(model)["length_mm"]` to extract
+      the slope. Grading recomputes the reference model fresh from `fish_clean` (never
+      hardcoded), and specifically catches the formula-direction mistake (`length_mm ~
+      weight_g` instead of `weight_g ~ length_mm`) with its own hint, since that produces a
+      real `NA` (no `length_mm` coefficient exists when it's the response, not a predictor)
+      rather than a silently-wrong number.
+    - `tutor_chat_m6_*`/`tutor_accordion_m6_*` renumbered in document order (linear
+      regression = `_1`, RMSE = `_2`, cumulative = `_3`) -- this only renumbers the HTML
+      chat-panel ids, not the `exercise_key` values, so no historical `exercise_attempts`
+      rows are affected.
+    Tested locally end-to-end: real `summary()` output renders correctly (slope 3.4608,
+    Multiple R-squared 0.8877); quiz answered correctly; exercise fail path confirmed
+    (submitted the swapped formula, got the NA-specific hint) and pass path confirmed
+    (extracted slope matched the demo's printout exactly, 3.460807), both attempts verified
+    logged correctly in Supabase against the new `module6_linear_regression` exercise_key.
+18. Remaining:
    - Actually run the pilot (send `pilot_testing/` materials to real testers).
    - Get real instructor usage on the dashboard's tabs to see if they actually answer the
      day-to-day questions, or need adjusting.
    - Run `Rscript R/classify_chat_messages.R` periodically (by hand, or set up on a
      schedule) so the "Chats" tab's categories stay fresh as new conversations happen.
-   - After beta feedback: add more question generators per module, INCLUDING types not
-     tied to that module's own graded exercises (explicit direction from the app owner --
-     practice should draw on everything a module taught, not just repeat its exercise
-     shapes). Also add a sentence at the end of each module (its "Wrapping up," most
-     likely) pointing to Module 7 and noting that its practice includes code-practice types
-     beyond what that module's own graded exercises covered -- deliberately deferred until
-     after the beta/that expansion, so the sentence describes what's actually there.
-   - Get real pilot feedback on the beta itself before expanding it -- do the 5 module
-     choices and per-module difficulty levels feel right, or does it need adjusting first?
+   - Add a sentence at the end of each module (its "Wrapping up," most likely) pointing to
+     Module 7 and noting that its practice includes code-practice types beyond what that
+     module's own graded exercises covered -- still deferred, now that the pools actually
+     have that variety, so the sentence describes something real.
+   - Get real pilot feedback on the expanded pools -- do the specific generators/difficulty
+     mix feel right, or does it need adjusting?
    - Build practice-chat logging + the dashboard distinction (item 15) once this pilot
      round is done.
+   - Consider whether Module 7's Module 6 practice pool should also get a linear-regression
+     question type now that the module teaches it in-app (currently its pool is RMSE and
+     R-squared only).
