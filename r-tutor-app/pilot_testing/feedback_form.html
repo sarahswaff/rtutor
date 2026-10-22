@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>R Tutor Pilot Feedback</title>
+<!--
+  One-page printable feedback form for pilot testers. Print it, or open
+  feedback_form.pdf (generated from this file -- see pilot_testing/README.md).
+  Deliberately short: anything the instructor dashboard already records
+  (time spent, where students got stuck, tutor transcripts, quiz answers)
+  is NOT asked here.
+-->
+<style>
+  @page { size: letter; margin: 0.5in; }
+  * { box-sizing: border-box; }
+  body { font-family: "Segoe UI", Arial, sans-serif; font-size: 10.5pt; color: #111; margin: 0; line-height: 1.3; }
+  h1 { font-size: 15pt; margin: 0 0 2pt; }
+  .sub { color: #444; margin: 0 0 8pt; font-size: 9.5pt; }
+  .row { display: flex; gap: 18pt; margin-bottom: 6pt; }
+  .q { margin: 0 0 9pt; break-inside: avoid; }
+  .q > b { display: block; margin-bottom: 3pt; }
+  .opts span { display: inline-block; margin-right: 14pt; white-space: nowrap; }
+  .box { display: inline-block; width: 9pt; height: 9pt; border: 1pt solid #111; margin-right: 4pt; vertical-align: -1pt; }
+  .line { border-bottom: 1pt solid #888; height: 16pt; }
+  .line.short { display: inline-block; width: 2.4in; height: 12pt; vertical-align: bottom; }
+  table { border-collapse: collapse; width: 100%; font-size: 9.5pt; }
+  th, td { border: 1pt solid #888; padding: 2pt 5pt; text-align: center; }
+  th:first-child, td:first-child { text-align: left; width: 38%; }
+  .n { font-weight: 700; margin-right: 4pt; }
+</style>
+</head>
+<body>
+  <h1>R Tutor Pilot: Quick Feedback</h1>
+  <p class="sub">About 5 minutes. Rough answers are perfect &mdash; honest beats polite. Fill it in when you finish (or when you stop).</p>
+
+  <div class="row">
+    <div>Name (optional): <span class="line short"></span></div>
+    <div>Date: <span class="line short" style="width:1.3in"></span></div>
+  </div>
+
+  <div class="q">
+    <b><span class="n">1.</span>Before this course, which best describes you?</b>
+    <div class="opts">
+      <span><span class="box"></span>Never installed R</span>
+      <span><span class="box"></span>Installed it, barely used it</span>
+      <span><span class="box"></span>I've run R code others wrote, rarely my own</span>
+      <span><span class="box"></span>I write my own R code regularly</span>
+    </div>
+  </div>
+
+  <div class="q">
+    <b><span class="n">2.</span>How did each module feel? (one mark per row)</b>
+    <table>
+      <tr><th>Module</th><th>Too easy</th><th>About right</th><th>Too hard</th><th>Didn't reach it</th></tr>
+      <tr><td>1. Introduction (install, RStudio)</td><td></td><td></td><td></td><td></td></tr>
+      <tr><td>2. Basic code (packages, errors)</td><td></td><td></td><td></td><td></td></tr>
+      <tr><td>3. Data (types, vectors, formulas)</td><td></td><td></td><td></td><td></td></tr>
+      <tr><td>4. Clean up (dplyr, missing values)</td><td></td><td></td><td></td><td></td></tr>
+      <tr><td>5. Plots (ggplot2, working habits)</td><td></td><td></td><td></td><td></td></tr>
+      <tr><td>6. Model output (lm, R&sup2;, RMSE)</td><td></td><td></td><td></td><td></td></tr>
+    </table>
+  </div>
+
+  <div class="q">
+    <b><span class="n">3.</span>Did anything break or not respond (a button, a page, an error that seemed like the course's fault)?</b>
+    <div class="opts"><span><span class="box"></span>No</span><span><span class="box"></span>Yes &rarr; where:</span></div>
+    <div class="line"></div>
+  </div>
+
+  <div class="q">
+    <b><span class="n">4.</span>The "Ask the Tutor" chat was&hellip;</b>
+    <div class="opts">
+      <span>Not helpful &nbsp;1 &nbsp;&nbsp;2 &nbsp;&nbsp;3 &nbsp;&nbsp;4 &nbsp;&nbsp;5&nbsp; Very helpful</span>
+      <span><span class="box"></span>I never opened it</span>
+    </div>
+    <div class="opts" style="margin-top:3pt">Check any that happened:
+      <span><span class="box"></span>It just gave me the answer</span>
+      <span><span class="box"></span>It said something wrong</span>
+      <span><span class="box"></span>It was too slow</span>
+    </div>
+  </div>
+
+  <div class="q">
+    <b><span class="n">5.</span>Did you look anything up outside the course (Google, ChatGPT, a friend)?</b>
+    <div class="opts"><span><span class="box"></span>No</span><span><span class="box"></span>Yes &rarr; for what:</span></div>
+    <div class="line"></div>
+  </div>
+
+  <div class="q">
+    <b><span class="n">6.</span>Could you now do these on your own, in real RStudio, without the course open?</b>
+    <div class="opts">
+      <span><span class="box"></span>Read a CSV file into R</span>
+      <span><span class="box"></span>Filter and summarize it</span>
+      <span><span class="box"></span>Make a plot</span>
+      <span><span class="box"></span>Fix an error message</span>
+      <span><span class="box"></span>Read a model's output</span>
+    </div>
+  </div>
+
+  <div class="q">
+    <b><span class="n">7.</span>Where would a screenshot, short video, or diagram have helped?</b>
+    <div class="line"></div>
+  </div>
+
+  <div class="q">
+    <b><span class="n">8.</span>The most confusing part was:</b>
+    <div class="line"></div>
+  </div>
+
+  <div class="q">
+    <b><span class="n">9.</span>If you could change one thing:</b>
+    <div class="line"></div>
+    <div class="line"></div>
+  </div>
+
+  <p class="sub" style="margin-top:6pt">Thank you! Hand this back, or snap a photo of it and send it to me.</p>
+</body>
+</html>
