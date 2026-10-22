@@ -64,6 +64,10 @@ evaluate_name_exercise <- function(result, stage) {
 # Welcome topic) for a returning student -- see get_student_progress() in
 # R/db_utils.R. A brand-new student (0 exercises passed) sees no banner.
 
+# Active-time logging for the instructor dashboard -- see
+# activity_tracker_ui()/activity_tracker_server() in R/tutor_utils.R.
+activity_tracker_server(input, session)
+
 showModal(modalDialog(
   title = "Welcome!",
   "Please enter your name to begin this tutorial.",
@@ -140,41 +144,42 @@ unstick_hidden_outputs(output, session)
 # in learnr's own dynamic quiz UI, confirmed via a wire-level trace against
 # a real deployed server -- see debug_recalculating_bug/HANDOFF.md).
 
-quiz_question_server(input, output, session, "install_quiz", list(
+quiz_question_server(input, output, session, "install_quiz", module_number = 1, list(
   wrong_replaces = list(correct = FALSE, message = "Not quite -- RStudio needs R installed underneath it."),
   correct = list(correct = TRUE, message = "Correct!"),
   wrong_unrelated = list(correct = FALSE, message = "They're closely related -- RStudio is built specifically to work with R.")
 ))
 
-quiz_question_server(input, output, session, "install_r_quiz", list(
+quiz_question_server(input, output, session, "install_r_quiz", module_number = 1, list(
   wrong_delete = list(correct = FALSE, message = "You need to actually run it to install R -- downloading alone doesn't install anything."),
   correct = list(correct = TRUE, message = "Correct!"),
   wrong_rename = list(correct = FALSE, message = "Renaming a file doesn't change what it is -- this installs R, not RStudio, regardless of its name.")
 ))
 
-quiz_question_server(input, output, session, "install_rstudio_quiz", list(
+quiz_question_server(input, output, session, "install_rstudio_quiz", module_number = 1, list(
   wrong_same = list(correct = FALSE, message = "RStudio is only an interface -- it needs an actual R installation underneath it to run any code."),
   correct = list(correct = TRUE, message = "Correct!"),
   wrong_autoinstall = list(correct = FALSE, message = "RStudio doesn't install R on its own -- the two are downloaded and installed as separate steps.")
 ))
 
-quiz_question_server(input, output, session, "first_check_quiz", list(
+quiz_question_server(input, output, session, "first_check_quiz", module_number = 1, list(
   wrong_broken = list(correct = FALSE, message = "RStudio itself is very unlikely to be the problem here -- it's almost always about what it's trying to connect to."),
   correct = list(correct = TRUE, message = "Correct!"),
   wrong_mathpkg = list(correct = FALSE, message = "Basic arithmetic works in R with no extra packages -- this isn't a missing-package problem.")
 ))
 
-quiz_question_server(input, output, session, "panes_quiz", list(
+quiz_question_server(input, output, session, "panes_quiz", module_number = 1, list(
   wrong_source = list(correct = FALSE, message = "Not quite -- try again."),
   wrong_console = list(correct = FALSE, message = "Not quite -- try again."),
   wrong_env = list(correct = FALSE, message = "Not quite -- try again."),
   correct = list(correct = TRUE, message = "Correct!")
 ))
 
-quiz_question_server(input, output, session, "wd_quiz", list(
-  wrong_speed = list(correct = FALSE, message = "Not related to speed."),
-  correct = list(correct = TRUE, message = "Correct!"),
-  wrong_packages = list(correct = FALSE, message = "Packages install fine either way.")
+quiz_question_server(input, output, session, "wd_quiz", module_number = 1, list(
+  wrong_name = list(correct = FALSE, message = "That looks for birds.csv directly inside C:/Users/sam/Documents -- but the file is two folders further down."),
+  wrong_partial = list(correct = FALSE, message = "Close -- but that looks for C:/Users/sam/Documents/data/birds.csv. The project folder is missing from the path."),
+  correct = list(correct = TRUE, message = "Correct! A relative path starts at the working directory, so it needs every folder between there and the file: project, then data."),
+  wrong_folder = list(correct = FALSE, message = "That points at a folder, not a file -- read.csv() needs the path to the file itself.")
 ))
 ```
 
@@ -227,12 +232,24 @@ bs5_theme_dependencies()
 ```
 
 ```{r, echo=FALSE}
+activity_tracker_ui()
+```
+
+```{r, echo=FALSE}
 uiOutput("welcome_back_banner")
 ```
 
-This tutorial is the first step before we get into any real course material. The goal here isn't to make you a programmer -- it's to make sure you're comfortable with R and RStudio as tools, so that later material (which may come from your instructor or from an AI assistant) doesn't feel unfamiliar.
+This course gets you ready to use R in the rest of the class. The goal isn't to make you a programmer -- most of the code you'll work with later will come from your instructor or an AI assistant. The goal is that you can **run that code, read what it tells you, and catch it when it's wrong**.
 
-Nothing in this module involves writing real R code yet -- that starts in Module 2.
+Go through the modules in order. Everything is explained from the beginning, and nothing assumes you've seen code before.
+
+How it works:
+
+- **Quizzes** ask you to predict what code will do. Answer before you scroll back up to check -- the first try is the one that tells you whether you've got it.
+- **Exercises** have you write, fix, or finish real R code, and check it when you click **Submit Answer**. Submit as often as you like.
+- **Ask the Tutor** sits under every exercise. It's an AI tutor that sees your latest attempt -- use it whenever you're stuck *or* curious, before or after submitting. It will help you get there rather than hand you the answer.
+
+Nothing in this module involves writing R code yet -- that starts in Module 2.
 
 ## Module 1: Installing R and RStudio
 
@@ -272,6 +289,13 @@ accordion(
 ```
 
 ### Step 1: Install R
+
+<details>
+<summary><strong>Already have R and RStudio?</strong> Check your version first.</summary>
+
+Open RStudio and type `R.version.string` in the Console, then press Enter. If it shows a version **older than 4.1.0**, install the current R anyway using the steps below -- this course uses features (like the `|>` pipe in Module 4) that older versions don't have, and code written by AI assistants usually assumes a recent version too. If you're on 4.1.0 or newer, skip ahead to "The RStudio panes."
+
+</details>
 
 1. Go to **[cran.r-project.org](https://cran.r-project.org)** -- this is CRAN, the official source for R. (Don't search for "R" in a general search engine first -- it's a one-letter name and the results are mostly noise. Go straight to CRAN.)
 2. Near the top, click the download link for your operating system -- **Download R for Windows**, **macOS**, or **Linux**.
@@ -351,15 +375,18 @@ quiz_question_ui("panes_quiz", "If you want to see a plot you just created, whic
 
 ## Module 1: Working directory
 
-Your **working directory** is the folder R considers "home base" for the current session -- it's where R will look for files by default, and where it'll save things unless told otherwise.
+Your **working directory** is the folder R treats as "home base." When code names a file, like `read.csv("birds.csv")`, R looks for it starting from that folder. `getwd()` ("get working directory") prints which folder that is.
 
-The most reliable way to manage this is with an **RStudio Project** (a folder with a `.Rproj` file in it). Opening a project automatically sets the working directory to that project's folder, which avoids a lot of "file not found" headaches later, especially once we start importing data.
+A file path *without* a drive letter at the front is **relative**: it starts from the working directory. So if the working directory is `C:/Users/sam/Documents`, then `"data/birds.csv"` means `C:/Users/sam/Documents/data/birds.csv`.
+
+The most reliable way to manage this is an **RStudio Project** (File > New Project): a folder with a `.Rproj` file in it. Opening the project sets the working directory to that folder automatically, so the same relative paths work every time -- on your computer and on anyone else's.
 
 ```{r, echo=FALSE}
-quiz_question_ui("wd_quiz", "What's the main benefit of using an RStudio Project instead of just opening loose scripts?", c(
-  "It makes your code run faster." = "wrong_speed",
-  "It automatically sets your working directory to a consistent, predictable folder." = "correct",
-  "It's required to install packages." = "wrong_packages"
+quiz_question_ui("wd_quiz", "getwd() prints \"C:/Users/sam/Documents\". Your file is at C:/Users/sam/Documents/project/data/birds.csv. Which line reads it?", c(
+  "read.csv(\"birds.csv\")" = "wrong_name",
+  "read.csv(\"data/birds.csv\")" = "wrong_partial",
+  "read.csv(\"project/data/birds.csv\")" = "correct",
+  "read.csv(\"C:/Users/sam/Documents\")" = "wrong_folder"
 ))
 ```
 
@@ -381,7 +408,7 @@ tagList(
 uiOutput("name_exercise_feedback")
 ```
 
-Stuck, or want to double check your thinking? The tutor chat below is available any time -- before you submit, after a failed attempt, or even after you've already passed.
+This is also a good moment to try **Ask the Tutor** below, even if you passed -- ask it anything about R or RStudio, so you know how it works before you need it.
 
 ```{r, echo=FALSE}
 accordion(
@@ -404,41 +431,46 @@ accordion(
 Module 2 introduces actual R code -- installing packages, reading the console, and running provided scripts.
 
 ```{r setup-module2, context="setup", include=FALSE}
-# Grading logic for this module's exercises. Unchanged from the
-# gradethis-based version -- only how it's *called* changed, not the
-# grading logic itself.
+# Grading logic for this module's exercises. See R/tutor_utils.R for the
+# shared exercise/tutor wiring.
 
-evaluate_comment_exercise <- function(user_code, stage) {
-  keep_active <- grepl('(?m)^\\s*print\\("Keep this line"\\)\\s*$', user_code, perl = TRUE)
-  comment_present <- grepl('(?m)^\\s*#.*Comment this line out', user_code, perl = TRUE)
-  comment_still_active <- grepl('(?m)^\\s*print\\("Comment this line out"\\)\\s*$', user_code, perl = TRUE)
+evaluate_comment_exercise <- function(user_code, result, stage) {
+  test_line_commented <- grepl("(?m)^\\s*#.*temps\\s*\\*\\s*2", user_code, perl = TRUE)
+  test_line_active <- grepl("(?m)^\\s*temps\\s*<-\\s*temps\\s*\\*\\s*2", user_code, perl = TRUE)
+  first_line_active <- grepl("(?m)^\\s*temps\\s*<-\\s*c\\(", user_code, perl = TRUE)
+  correct_result <- is.numeric(result) && length(result) == 1 && isTRUE(all.equal(result, mean(c(18, 21, 25))))
 
-  passed <- keep_active && comment_present && !comment_still_active
+  passed <- test_line_commented && !test_line_active && first_line_active && correct_result
 
   feedback_message <- if (passed) {
-    "Nice -- the first line still runs and the second is safely commented out."
+    "Right -- the leftover test line is switched off, so the mean is back to the real 21.33."
   } else if (identical(stage, "error_check")) {
-    "That code doesn't run as-is -- check that both lines are still valid R (matching quotes and parentheses), just with the second one commented out."
-  } else if (!comment_present) {
-    "The second line still isn't commented out -- add a # at the very start of that line."
-  } else if (comment_still_active) {
-    "Looks like there might be two copies of that line -- make sure only the commented-out version remains."
+    "That code doesn't run as-is now -- make sure you only added a # at the start of one line, without changing anything else."
+  } else if (!first_line_active) {
+    "The first line (creating temps) needs to stay active -- without it there's nothing to average."
+  } else if (test_line_active) {
+    "The result is still doubled -- which line is changing temps after it's created? Put a # at the very start of that line."
+  } else if (!test_line_commented) {
+    "Comment that line out with # rather than deleting it -- the point is being able to switch it back on later."
   } else {
-    "Make sure the first print() line is still there and uncommented, and the second line is commented out with #."
+    "Close -- the last line should still print the mean of temps."
   }
 
   list(passed = passed, message = feedback_message)
 }
 
-evaluate_fix_the_bug_exercise <- function(result, stage) {
+evaluate_fix_the_bug_exercise <- function(user_code, result, stage) {
   passed <- !is.null(result) && is.character(result) && identical(trimws(result), "Hello")
+  still_misspelled <- grepl("pritn", user_code, fixed = TRUE)
 
   feedback_message <- if (passed) {
-    "Nice work -- that runs cleanly now."
+    "Fixed -- both problems. Notice R only reported one at a time: fixing an error often uncovers the next one."
+  } else if (identical(stage, "error_check") && still_misspelled) {
+    "Read the error: R can't find a function with that name. Look closely at how the function's name is spelled."
   } else if (identical(stage, "error_check")) {
-    "That's still erroring. Take a look at what R is telling you, and check whether Hello needs to be treated as text."
+    "One down! Now R is looking for an object called Hello. Is Hello meant to be the name of something, or text?"
   } else {
-    "The code runs without an error, but it should print the word Hello. Double check what you changed."
+    "The code runs, but it should print the word Hello. Double check what you changed."
   }
 
   list(passed = passed, message = feedback_message)
@@ -457,28 +489,41 @@ wire_tutor_chat("module2_fix_error", "tutor_chat_m2_2", "tutor_accordion_m2_2", 
 
 ```{r, context="server"}
 # --- Quiz question wiring ------------------------------------------------
-quiz_question_server(input, output, session, "packages_quiz", list(
-  wrong_install = list(correct = FALSE, message = "That downloads it again -- not needed since it's already installed."),
-  correct = list(correct = TRUE, message = "Correct!"),
-  wrong_automatic = list(correct = FALSE, message = "Not quite -- installed packages still need to be loaded with library() each session.")
+# "What would happen / what does this mean" questions built around
+# situations students actually hit -- especially when running code someone
+# else (or an AI) wrote.
+quiz_question_server(input, output, session, "packages_quiz", module_number = 2, list(
+  correct = list(correct = TRUE, message = "Correct! \"There is no package called...\" means it's not installed on this computer yet. Install it once, then library() works."),
+  wrong_quotes = list(correct = FALSE, message = "library() accepts the name with or without quotes -- that's not the problem. The message says the package isn't on this computer at all."),
+  wrong_update = list(correct = FALSE, message = "update.packages() only updates packages you already have -- this one was never installed."),
+  wrong_restart = list(correct = FALSE, message = "Restarting won't help: the package isn't on this computer, so there's nothing to load.")
 ))
 
-quiz_question_server(input, output, session, "console_quiz", list(
-  wrong_speed = list(correct = FALSE, message = "Not about speed -- the code executes the same either way."),
-  correct = list(correct = TRUE, message = "Correct!"),
-  wrong_oneline = list(correct = FALSE, message = "The Console can run many lines over a session -- it's just not saved as a file automatically.")
+quiz_question_server(input, output, session, "console_quiz", module_number = 2, list(
+  correct = list(correct = TRUE, message = "Correct! + means R thinks the command isn't finished -- usually a missing ) or \". Finish it, or press Esc to cancel and start over."),
+  wrong_add = list(correct = FALSE, message = "The + here isn't addition -- it's the Console's prompt changing from > to +, which means R is waiting for more."),
+  wrong_crash = list(correct = FALSE, message = "R is fine -- it's just waiting for you to finish the command you started.")
 ))
 
-quiz_question_server(input, output, session, "running_quiz", list(
-  wrong_oneatatime = list(correct = FALSE, message = "That works, but it's not the most efficient option here."),
-  correct = list(correct = TRUE, message = "Correct!"),
-  wrong_retype = list(correct = FALSE, message = "Retyping isn't necessary -- you can run the file directly.")
+quiz_question_server(input, output, session, "running_quiz", module_number = 2, list(
+  correct = list(correct = TRUE, message = "Correct! R only knows what you've actually run in this session -- not what's written in the file. Run line 1 first (or run the whole script)."),
+  wrong_typo = list(correct = FALSE, message = "Both lines spell temps the same way. The problem is which lines have actually been run."),
+  wrong_package = list(correct = FALSE, message = "mean() is built into R -- no package needed. Look at what R says it can't find."),
+  wrong_corrupt = list(correct = FALSE, message = "Nothing's wrong with the file -- R just hasn't run line 1 yet in this session.")
 ))
 
-quiz_question_server(input, output, session, "help_quiz", list(
-  correct = list(correct = TRUE, message = "Correct!"),
-  wrong_guess = list(correct = FALSE, message = "That works eventually, but it's not the fastest or most reliable way."),
-  wrong_reinstall = list(correct = FALSE, message = "Not related to checking a function's arguments.")
+quiz_question_server(input, output, session, "warning_quiz", module_number = 2, list(
+  correct = list(correct = TRUE, message = "Correct! A warning means the code ran, but something may not be what you expect. Here \"n/a\" silently became NA -- easy to miss if you skip warnings."),
+  wrong_ignore = list(correct = FALSE, message = "Warnings are often the only sign a result is quietly wrong. This one is telling you a value turned into NA."),
+  wrong_failed = list(correct = FALSE, message = "It didn't fail -- you got a result: 12 15 NA. That's what makes warnings easy to ignore."),
+  wrong_fixed = list(correct = FALSE, message = "R didn't fix anything -- it replaced \"n/a\" with NA (missing) and warned you that it did.")
+))
+
+quiz_question_server(input, output, session, "help_quiz", module_number = 2, list(
+  correct = list(correct = TRUE, message = "Correct! digits = 0 is a default: if you don't give digits, round() uses 0 -- whole numbers."),
+  wrong_257 = list(correct = FALSE, message = "That would need digits = 2. The Usage line shows what happens when you leave digits out."),
+  wrong_error = list(correct = FALSE, message = "An argument written as name = value in Usage has a default, so you can leave it out."),
+  wrong_25 = list(correct = FALSE, message = "Rounding to whole numbers turns 2.567 into 3, not 2.5.")
 ))
 ```
 
@@ -486,74 +531,74 @@ quiz_question_server(input, output, session, "help_quiz", list(
 # --- Exercise wiring -------------------------------------------------------
 exercise_server(
   input, output, session, "comment_exercise", "module2_comment_out", "tutor_accordion_m2_1",
-  starting_code = 'print("Keep this line")\nprint("Comment this line out")',
-  evaluate_fn = function(user_code, result, envir, stage) evaluate_comment_exercise(user_code, stage)
+  starting_code = "temps <- c(18, 21, 25)\ntemps <- temps * 2   # quick test -- remove later\nmean(temps)",
+  evaluate_fn = function(user_code, result, envir, stage) evaluate_comment_exercise(user_code, result, stage)
 )
 
 exercise_server(
   input, output, session, "fix_the_bug_exercise", "module2_fix_error", "tutor_accordion_m2_2",
-  starting_code = "print(Hello)",
-  evaluate_fn = function(user_code, result, envir, stage) evaluate_fix_the_bug_exercise(result, stage)
+  starting_code = "pritn(Hello)",
+  evaluate_fn = function(user_code, result, envir, stage) evaluate_fix_the_bug_exercise(user_code, result, stage)
 )
 ```
 
 ## Module 2: Welcome back
 
-Module 1 got R and RStudio installed and gave you a tour of the panes. This module is where you start actually touching code -- packages, the console, comments, running code someone else wrote, and (probably most usefully) how to read an error message without panicking.
+This module is where you start touching code: packages, the Console, comments, running code someone else wrote, and -- probably most useful of all -- reading what R tells you when something goes wrong.
 
-You are **not** expected to write substantial code from scratch in this course. The goal is to get comfortable enough that running and adjusting code -- your instructor's, or an AI assistant's -- feels normal rather than intimidating.
+You are **not** expected to write much code from scratch in this course. You *are* expected to run code you're handed, notice when it's misbehaving, and fix it.
+
+<details>
+<summary><strong>New to code?</strong> Two words you'll see constantly.</summary>
+
+A **function** is a named command that does one job, written with parentheses after its name: `mean(x)`, `print("hi")`, `library(dplyr)`. What goes inside the parentheses are its **arguments** -- the inputs you hand it. Some arguments have names, like `digits` in `round(3.14159, digits = 2)`.
+
+</details>
 
 ## Module 2: Packages
 
-R on its own can do a lot, but most real work relies on **packages** -- bundles of extra functions other people have written. Getting a package ready to use is a two-step process:
+Most real work uses **packages**: bundles of extra functions other people wrote. Using one takes two steps:
 
-1. **`install.packages("packagename")`** -- downloads the package onto your computer. You only need to do this once per package (until you want to update it).
-2. **`library(packagename)`** -- loads that package into your *current* R session so its functions are available to use. You need to do this every time you start a new session and want to use that package.
+1. **`install.packages("dplyr")`** downloads it onto your computer. Once per computer.
+2. **`library(dplyr)`** loads it into your current session. Every time you start R and want to use it.
 
-A common beginner mix-up: running `install.packages()` again every session (unnecessary -- it's already installed) instead of `library()` (which you do need every session).
+Code you're handed -- especially from an AI -- usually starts with `library()` lines and assumes the packages are already installed.
 
 ```{r, echo=FALSE}
-quiz_question_ui("packages_quiz", "You already installed the tidyverse package last week. You're starting a new R session today and want to use it. What do you run?", c(
-  "install.packages(\"tidyverse\")" = "wrong_install",
-  "library(tidyverse)" = "correct",
-  "Nothing -- it's automatically available." = "wrong_automatic"
+quiz_question_ui("packages_quiz", "You run library(janitor) and get: Error in library(janitor) : there is no package called 'janitor'. What do you run?", c(
+  "install.packages(\"janitor\"), then library(janitor) again" = "correct",
+  "library(\"janitor\") -- with quotes this time" = "wrong_quotes",
+  "update.packages()" = "wrong_update",
+  "Nothing -- just restart RStudio and try again" = "wrong_restart"
 ))
 ```
 
 ## Module 2: The Console
 
-The **Console** is where code actually executes, one command at a time. When you see a prompt like `>` with nothing after it, R is idle and waiting for your next command.
-
-Type a line of code into the Console and press Enter, and R runs it immediately -- there's no separate "run" step. This is great for quick checks (like testing what a function does), but it's not a great place to build up real work, because nothing you type there is automatically saved anywhere.
-
-That's what **scripts** are for -- files (usually ending in `.R`) where you write code that you can save, edit, and re-run later, rather than retyping it in the Console every time.
+The **Console** runs code the moment you press Enter. A `>` prompt means R is ready for the next command. It's great for quick checks, but nothing typed there is saved -- real work goes in a **script** (a `.R` file) that you can save, edit, and re-run.
 
 ```{r, echo=FALSE}
-quiz_question_ui("console_quiz", "What's the main advantage of writing your code in a script instead of typing it directly into the Console?", c(
-  "Scripts run faster than the Console." = "wrong_speed",
-  "You can save, edit, and re-run a script later; Console history is easy to lose track of." = "correct",
-  "The Console can only run one line of code, ever." = "wrong_oneline"
+quiz_question_ui("console_quiz", "You press Enter and the Console shows + instead of >. What does that mean?", c(
+  "R is waiting for you to finish the command -- usually a missing ) or quotation mark" = "correct",
+  "R added the numbers you typed" = "wrong_add",
+  "R crashed and needs to be restarted" = "wrong_crash"
 ))
 ```
 
 ## Module 2: Comments
 
-A **comment** is a line (or part of a line) that R ignores when running your code. In R, anything after a `#` on a line is a comment.
+Anything after a `#` on a line is a **comment**, and R ignores it. Comments are for two things:
 
-Comments are useful for two main things:
+- **Notes** explaining *why* code does something.
+- **Switching a line off** without deleting it -- extremely common when testing: comment a line out, see what changes, switch it back on later.
 
-- **Notes to yourself or others** -- explaining *why* code does something, not just what it does.
-- **Temporarily turning off a line** -- if you want to skip a line without deleting it, put a `#` in front of it. This is extremely common when testing or debugging: comment a line out, see what changes, uncomment it later if you want it back.
+### Practice: switch off a leftover line
 
-### Practice: comment out a line
-
-Below are two lines of code. Leave the first one exactly as it is, but use `#` to comment out the second one, so that only `"Keep this line"` gets printed when you submit. Don't delete the second line -- just comment it out.
+This should report the average of the three temperatures (about 21.3), but someone left a test line in that changes them. Find it and comment it out -- don't delete it.
 
 ```{r, echo=FALSE}
-exercise_ui("comment_exercise", 'print("Keep this line")\nprint("Comment this line out")')
+exercise_ui("comment_exercise", "temps <- c(18, 21, 25)\ntemps <- temps * 2   # quick test -- remove later\nmean(temps)")
 ```
-
-Stuck, or want to double check your thinking? The tutor chat below is available any time -- before you submit, after a failed attempt, or even after you've already passed.
 
 ```{r, echo=FALSE}
 accordion(
@@ -571,45 +616,51 @@ accordion(
 )
 ```
 
-### Nice work
-
-Once you've got that exercise passing, you've got the core mechanic of comments down -- everything else about them is just judgment on when to use one.
-
 ## Module 2: Running code someone gives you
 
-In this course, you'll often be handed a chunk of R code -- from your instructor, from course materials, or from an AI assistant -- and your job is to run it, not to have written it from scratch. That's a completely normal, professional way to use R, and it's the main skill this module is building.
+Much of the code you'll use comes from your instructor or an AI assistant -- running it is a normal, professional way to work. In RStudio:
 
-In RStudio, the most common ways to run code are:
+- **Ctrl+Enter** (Cmd+Return on Mac) runs the line your cursor is on, then moves to the next line.
+- **Source** (Ctrl+Shift+Enter) runs the whole file, top to bottom.
 
-- **Run the current line** -- click into the line in your script and press **Ctrl+Enter** (Cmd+Return on Mac). This runs just that line in the Console and moves your cursor to the next one.
-- **Run the whole script** -- click **Source** (or press Ctrl+Shift+Enter) to run every line in the file from top to bottom.
+R only knows about what you've actually *run* in this session -- not what's written in the file.
 
 ```{r, echo=FALSE}
-quiz_question_ui("running_quiz", "You've been given a 10-line script and just want to see what the whole thing does. What's the most efficient way to run it?", c(
-  "Click into each line one at a time and press Ctrl+Enter, ten separate times." = "wrong_oneatatime",
-  "Click Source to run the entire script at once." = "correct",
-  "Retype all 10 lines into the Console by hand." = "wrong_retype"
+quiz_question_ui("running_quiz", "A script's line 1 is temps <- c(18, 21, 25) and line 2 is mean(temps). You open it fresh, click on line 2, press Ctrl+Enter, and get: object 'temps' not found. Why?", c(
+  "Line 1 hasn't been run in this session yet" = "correct",
+  "temps is spelled differently on the two lines" = "wrong_typo",
+  "mean() needs a package loaded first" = "wrong_package",
+  "The script file is corrupted" = "wrong_corrupt"
 ))
 ```
 
-## Module 2: Reading error messages
+## Module 2: Errors and warnings
 
-Sooner or later, you'll run code and see red text instead of the output you expected. That's an **error message** -- and it's not a sign you've broken something permanently. It's R telling you, often quite specifically, what it couldn't do and why.
+Red text isn't a sign you've broken something. It's R telling you, often quite specifically, what it couldn't do:
 
-A few error types you'll run into constantly:
+- **`object 'x' not found`** -- R has no object called `x`. Usually a typo, a line that hasn't been run, or text that's missing its quotation marks.
+- **`could not find function "f"`** -- a misspelled function name, or a package that hasn't been loaded with `library()`.
+- **`unexpected symbol` / `unexpected ')'`** -- a syntax slip: a missing comma, parenthesis, or quotation mark.
 
-- **`object 'x' not found`** -- R looked for something named `x` and it doesn't exist yet in your session. Common cause: a typo, or forgetting to treat text as text (more on that in a second).
-- **`could not find function "f"`** -- usually means a package hasn't been loaded yet with `library()`.
-- **`unexpected symbol` / `unexpected ')'`** -- a syntax problem, like a missing comma, an extra or missing parenthesis, or a missing quotation mark.
+Unquoted words are treated as *names*: `print(Hello)` looks for an object called `Hello`, while `print("Hello")` prints the text.
 
-One especially common mistake for beginners: writing a word without quotation marks when you meant it as text. R treats unquoted words as the *names* of objects it should already know about -- so `print(Hello)` looks for an object literally named `Hello`, not the word "Hello."
-
-### Practice: fix the error
-
-The code below has exactly this problem. Fix it so that it runs without an error and prints the word `Hello`.
+A **warning** is different from an error: the code *ran* and gave you a result, but R is flagging something you should check. Warnings are easy to ignore, and they're often the only sign a result is quietly wrong.
 
 ```{r, echo=FALSE}
-exercise_ui("fix_the_bug_exercise", "print(Hello)")
+quiz_question_ui("warning_quiz", "You run as.numeric(c(\"12\", \"15\", \"n/a\")) and get [1] 12 15 NA, plus: Warning message: NAs introduced by coercion. What does the warning mean?", c(
+  "It ran, but \"n/a\" couldn't become a number, so it's now NA -- check before using the result" = "correct",
+  "Nothing important -- warnings can be ignored" = "wrong_ignore",
+  "The code failed and produced no result" = "wrong_failed",
+  "R fixed the problem automatically" = "wrong_fixed"
+))
+```
+
+### Practice: fix the errors
+
+This should print the word `Hello`. It has two problems, and R will only tell you about one at a time -- read each message, fix that, run it again.
+
+```{r, echo=FALSE}
+exercise_ui("fix_the_bug_exercise", "pritn(Hello)")
 ```
 
 ```{r, echo=FALSE}
@@ -628,143 +679,144 @@ accordion(
 )
 ```
 
-### Nice work
-
-Errors like this will keep showing up throughout the course -- and now you've got a process for them: read the message, figure out what R was actually looking for, and fix that specific thing.
-
 ## Module 2: Getting help
 
-R has built-in documentation for almost everything, and checking it is faster than it sounds:
+Every function has a help page: run **`?round`** (or `help(round)`) and it opens in the Help pane. The most useful part is **Usage**, which shows the arguments and their defaults. An argument written as `name = value` has a default, so you can leave it out:
 
-- **`?function_name`** or **`help(function_name)`** -- opens that function's help page (arguments, examples, what it returns) in the Help pane.
-- **`args(function_name)`** -- a quick shortcut that just shows you what arguments a function takes, without opening the full page.
+```
+round(x, digits = 0)
+```
 
-Later in this course, you may also have an AI assistant available to ask questions like this to directly -- but `?` is still worth knowing, since it's always there, works offline, and gives you the authoritative answer straight from the package itself.
+An AI assistant can answer the same questions, but `?` is always available, works offline, and comes straight from the package's authors -- useful for checking what an AI told you.
 
 ```{r, echo=FALSE}
-quiz_question_ui("help_quiz", "You want to know what arguments the mean() function accepts. What's the fastest way to check, from inside R?", c(
-  "?mean" = "correct",
-  "Guess and see what error you get." = "wrong_guess",
-  "Reinstall R." = "wrong_reinstall"
+quiz_question_ui("help_quiz", "Based on that Usage line, what does round(2.567) return?", c(
+  "3" = "correct",
+  "2.57" = "wrong_257",
+  "An error, because digits wasn't given" = "wrong_error",
+  "2.5" = "wrong_25"
 ))
 ```
 
 ## Module 2: Wrapping up
 
-You've now got the basic habits of working in R day-to-day: telling the console from a script, loading packages before using them, leaving comments for your future self, and reading an error message as information rather than a dead end.
-
 **If you remember only a few things from this module:**
 
-- A red error message is R telling you exactly what it's confused about -- read it before assuming something's broken.
-- A package has to be loaded with `library()` in *every new session*, even after it's already installed.
-- You'll often be running code someone else wrote, not just your own -- that's normal, not a shortcut.
+- Read the error message -- it usually says exactly what R couldn't find or understand. Fixing one error can uncover the next; that's normal.
+- A warning means the code ran but something may be off. Don't skip it.
+- R only knows what you've run, in the order you ran it -- not what's sitting in your script.
+- Install a package once per computer; `library()` it every session.
 
 ### Up next
 
-Module 3 gets into actual data: data types, naming conventions, vectors, assignment, and basic functions.
+Module 3 gets into actual data: data types, vectors, comparisons, and turning a formula into code.
 
 ```{r setup-module3, context="setup", include=FALSE}
-# Grading logic for this module's exercises. Unchanged from the
-# gradethis-based version -- only how it's *called* changed, not the
-# grading logic itself.
+# Grading logic for this module's exercises. See R/tutor_utils.R for the
+# shared exercise/tutor wiring.
 
-# Given inputs for the "Turning a formula into code" exercise -- the
-# student translates the Pythagorean theorem into code using these, so (like
-# Module 4's fish_clean) they need to be explicitly placed in globalenv():
+# Given input for the "Turning a formula into code" exercise. Like Module
+# 4's fish_clean, it has to be placed in globalenv() explicitly:
 # exercise_server()'s eval(parse(text = user_code), envir = new.env())
-# resolves its environment's parent chain through globalenv(), not through
-# this setup chunk's own local execution environment. This is the first
-# exercise in Modules 1-3 that needs pre-existing shared data rather than
-# building a self-contained vector from scratch, so it's the first place in
-# this module that hits the same gotcha Module 4 first ran into.
-formula_a <- c(3, 6, 5)
-formula_b <- c(4, 8, 12)
-assign("formula_a", formula_a, envir = globalenv())
-assign("formula_b", formula_b, envir = globalenv())
+# resolves its parent chain through globalenv(), not through this setup
+# chunk's own local environment.
+temps_f <- c(32, 212, 98.6)
+assign("temps_f", temps_f, envir = globalenv())
 
-evaluate_assignment_exercise <- function(user_code, result, stage) {
-  has_apples <- grepl("apples\\s*<-", user_code)
-  has_oranges <- grepl("oranges\\s*<-", user_code)
-  correct_result <- is.numeric(result) && length(result) == 1 && isTRUE(result == 8)
+evaluate_assignment_exercise <- function(user_code, result, envir, stage) {
+  price_ok <- !is.null(envir) && exists("price", envir = envir, inherits = FALSE) && isTRUE(get("price", envir = envir) == 5)
+  qty_ok <- !is.null(envir) && exists("qty", envir = envir, inherits = FALSE) && isTRUE(get("qty", envir = envir) == 3)
+  typed_answer <- grepl("15", user_code, fixed = TRUE)
+  correct_result <- is.numeric(result) && length(result) == 1 && isTRUE(result == 15)
 
-  passed <- has_apples && has_oranges && correct_result
+  passed <- price_ok && qty_ok && !typed_answer && correct_result
 
   feedback_message <- if (passed) {
-    "Nice -- apples and oranges assigned, and the total comes out to 8."
+    "Right -- total has to be recalculated after price changes. A variable stores a value, not a formula."
   } else if (identical(stage, "error_check")) {
-    "That code doesn't run as-is -- check that both assignments and the final line are valid R."
-  } else if (!has_apples || !has_oranges) {
-    "Make sure you're assigning values to both `apples` and `oranges` using `<-`, replacing each `FIXME`."
+    "That code doesn't run as-is -- check that every line is a complete assignment or expression."
+  } else if (typed_answer) {
+    "Don't type 15 yourself -- the point is getting R to calculate it from price and qty, so it stays right if they change again."
+  } else if (!price_ok || !qty_ok) {
+    "Keep price as 5 and qty as 3 -- the fix is about when total gets calculated, not the inputs."
+  } else if (is.numeric(result) && isTRUE(result == 12)) {
+    "Still 12. total was calculated back when price was 4, and it doesn't update itself. What has to happen after price changes?"
   } else {
-    "apples and oranges are assigned, but the last line doesn't come out to 8 yet -- check the values you gave each variable."
+    "Not 15 yet -- total should be the new price times qty."
   }
 
   list(passed = passed, message = feedback_message)
 }
 
 evaluate_vectors_exercise <- function(user_code, result, stage) {
-  uses_c <- grepl("c\\(", user_code)
-  uses_index <- grepl("\\[", user_code)
-  correct_result <- is.numeric(result) && length(result) == 1 && isTRUE(result == 20)
+  uses_index <- grepl("scores\\s*\\[", user_code)
+  typed_values <- grepl("c\\(\\s*20\\s*,\\s*40\\s*\\)", user_code)
+  correct_result <- is.numeric(result) && identical(as.numeric(result), c(20, 40))
 
-  passed <- uses_c && uses_index && correct_result
+  passed <- uses_index && !typed_values && correct_result
 
   feedback_message <- if (passed) {
-    "That's it -- a vector of four numbers, and indexing pulled out the right one."
+    "That's it -- a vector of positions inside the brackets pulls out several elements at once."
   } else if (identical(stage, "error_check")) {
-    "That code doesn't run as-is -- check the commas inside c(...) and the brackets used for indexing."
-  } else if (!uses_c) {
-    "Build the vector with c(...), replacing the FIXME with the four numbers listed above."
+    "That code doesn't run as-is -- check the brackets and commas."
+  } else if (typed_values) {
+    "Pull the values out of scores by position, rather than typing 20 and 40 yourself."
   } else if (!uses_index) {
-    "Once `scores` exists, use square brackets (like scores[FIXME]) to pull out one element."
+    "Use square brackets on scores to pick out elements by position."
+  } else if (is.numeric(result) && length(result) == 4) {
+    "Empty brackets give you everything back -- put the positions you want inside them."
+  } else if (is.numeric(result) && length(result) == 1) {
+    "That's one element -- you need two at once. How do you give R more than one position inside the brackets?"
   } else {
-    "scores exists and you're indexing into it, but the result isn't 20 yet -- double check which position you're asking for, and that the vector's values are in order."
+    "Not quite the 2nd and 4th elements yet -- check which positions you're asking for."
   }
 
   list(passed = passed, message = feedback_message)
 }
 
-evaluate_fix_comparison_exercise <- function(user_code, result, stage) {
-  kept_original_value <- grepl("temperature\\s*<-\\s*75", user_code)
-  uses_comparison <- grepl("==", user_code)
-  correct_result <- is.logical(result) && length(result) == 1 && isTRUE(result == FALSE)
+evaluate_fix_comparison_exercise <- function(user_code, result, envir, stage) {
+  temps_intact <- !is.null(envir) && exists("temps", envir = envir, inherits = FALSE) &&
+    isTRUE(all.equal(get("temps", envir = envir), c(72, 80, 85, 80, 79)))
+  uses_comparison <- grepl("==", user_code, fixed = TRUE)
+  correct_result <- is.numeric(result) && length(result) == 1 && isTRUE(result == 2)
 
-  passed <- kept_original_value && uses_comparison && correct_result
+  passed <- temps_intact && uses_comparison && correct_result
 
   feedback_message <- if (passed) {
-    "Right -- that's a comparison now, temperature is still 75, and 75 == 80 correctly comes out FALSE."
+    "Right -- temps == 80 gives TRUE/FALSE for each day, and sum() counts the TRUEs: 2 days."
   } else if (identical(stage, "error_check")) {
-    "That code doesn't run as-is -- check that the second line is a complete, valid comparison."
-  } else if (!kept_original_value) {
-    "temperature's value changed from its original 75 -- make sure the second line only *compares* temperature to 80, without reassigning temperature itself."
+    "That code doesn't run as-is -- check the comparison line is complete."
+  } else if (!temps_intact) {
+    "temps isn't the original five temperatures anymore -- some line is overwriting it. A single = assigns, just like <-."
   } else if (!uses_comparison) {
-    "The second line is still doing an assignment, not a comparison -- R's comparison operator is ==, not a single =."
+    "You'll need a comparison here -- R's \"is equal to\" is ==, two equals signs."
   } else {
-    "You're comparing now, but the result isn't right yet -- think about whether 75 actually equals 80."
+    "You're comparing now, but the count isn't 2 yet -- sum() of a TRUE/FALSE vector counts the TRUEs."
   }
 
   list(passed = passed, message = feedback_message)
 }
 
 evaluate_formula_exercise <- function(user_code, result, stage) {
-  uses_sqrt <- grepl("sqrt\\s*\\(", user_code)
-  uses_given_vectors <- grepl("formula_a", user_code) && grepl("formula_b", user_code)
-  correct_result <- sqrt(formula_a^2 + formula_b^2)
+  uses_given <- grepl("temps_f", user_code, fixed = TRUE)
+  correct_result <- (temps_f - 32) * 5 / 9
+  buggy_result <- temps_f - 32 * 5 / 9
   result_ok <- is.numeric(result) && length(result) == length(correct_result) &&
     isTRUE(all.equal(as.numeric(result), correct_result, tolerance = 0.001))
+  still_buggy <- is.numeric(result) && length(result) == 3 && isTRUE(all.equal(as.numeric(result), buggy_result))
 
-  passed <- uses_sqrt && uses_given_vectors && result_ok
+  passed <- uses_given && result_ok
 
   feedback_message <- if (passed) {
-    "That's the formula translated correctly -- sqrt(a^2 + b^2), computed for all three triangles at once."
+    "Fixed -- 0, 100, and 37. And you could prove it: 212 F really is 100 C."
   } else if (identical(stage, "error_check")) {
-    "That code doesn't run as-is -- check that both ^FIXMEs are replaced with a number, and the parentheses all match."
-  } else if (!uses_given_vectors) {
-    "This should be computed from formula_a and formula_b directly, not typed-in numbers."
-  } else if (!uses_sqrt) {
-    "The formula needs a square root -- check that sqrt() is still wrapped around the rest of the expression."
+    "That code doesn't run as-is -- check that every ( has a matching )."
+  } else if (!uses_given) {
+    "Compute it from temps_f, not typed-in numbers -- the point is code that works for any temperatures."
+  } else if (still_buggy) {
+    "Check the middle value: 212 F should come out as 100 C, but it's 194. R does * and / before -, so what is actually being subtracted from temps_f?"
   } else {
-    "Close, but that's not quite c = sqrt(a^2 + b^2) yet -- check what power formula_a and formula_b are each raised to."
+    "Not quite -- check your answer against a value you know: 212 F is 100 C, and 32 F is 0 C."
   }
 
   list(passed = passed, message = feedback_message)
@@ -772,23 +824,29 @@ evaluate_formula_exercise <- function(user_code, result, stage) {
 
 evaluate_module3_cumulative_exercise <- function(user_code, result, envir, stage) {
   has_prices <- !is.null(envir) && exists("prices", envir = envir, inherits = FALSE) &&
-    is.numeric(get("prices", envir = envir)) &&
-    length(get("prices", envir = envir)) == 4
-  has_tax_rate <- !is.null(envir) && exists("tax_rate", envir = envir, inherits = FALSE)
-  correct_result <- is.logical(result) && length(result) == 1 && isTRUE(result == TRUE)
+    is.numeric(get("prices", envir = envir)) && length(get("prices", envir = envir)) == 4
+  typed_answer <- grepl("12.42", user_code, fixed = TRUE)
+  correct_result <- is.numeric(result) && length(result) == 1 && isTRUE(all.equal(as.numeric(result), 12.42))
+  adds_rate <- is.numeric(result) && length(result) == 1 && isTRUE(all.equal(as.numeric(result), 11.58))
 
-  passed <- has_prices && has_tax_rate && correct_result
+  passed <- has_prices && !typed_answer && correct_result
 
   feedback_message <- if (passed) {
-    "Everything checks out -- prices is a 4-item vector, tax_rate is defined, and the final comparison correctly comes out TRUE."
+    "All three fixed -- $12.42. The last one was the dangerous kind: the code ran fine and gave a believable-looking number."
+  } else if (identical(stage, "error_check") && grepl("1.25 4", user_code, fixed = TRUE)) {
+    "R stopped on the prices line (\"unexpected numeric constant\") -- two of the numbers inside c() aren't separated properly."
+  } else if (identical(stage, "error_check") && grepl("Tax_rate", user_code, fixed = TRUE)) {
+    "One down! Now R can't find an object. Compare that name, letter by letter, with the name that was actually created."
   } else if (identical(stage, "error_check")) {
-    "That code still doesn't run -- work through the error message one issue at a time. It's telling you exactly where R got stuck."
+    "That still doesn't run -- read the error message and fix one thing at a time. It tells you where R got stuck."
+  } else if (typed_answer) {
+    "Let the code calculate the total rather than typing the answer in."
   } else if (!has_prices) {
-    "`prices` should end up as a vector of 4 numbers -- double check the values inside c(...)."
-  } else if (!has_tax_rate) {
-    "`tax_rate` doesn't exist yet -- check the variable name matches exactly everywhere it's used."
+    "prices should be a vector of 4 numbers -- check the values inside c(...)."
+  } else if (adds_rate) {
+    "It runs now, but $11.58 is only 8 cents more than $11.50 -- that's not 8% tax. What is total + tax_rate actually adding?"
   } else {
-    "The script runs and your objects look right, but the final comparison isn't coming out TRUE yet -- walk back through the arithmetic."
+    "It runs, but the total isn't right yet. Sanity-check it: 8% of about $11.50 is a bit under a dollar."
   }
 
   list(passed = passed, message = feedback_message)
@@ -806,41 +864,58 @@ wire_tutor_chat("module3_cumulative", "tutor_chat_m3_4", "tutor_accordion_m3_4",
 
 ```{r, context="server"}
 # --- Quiz question wiring ------------------------------------------------
-quiz_question_server(input, output, session, "types_quiz", list(
-  wrong_numeric = list(correct = FALSE, message = "Not quite -- TRUE isn't a number."),
-  wrong_character = list(correct = FALSE, message = "Not quite -- TRUE isn't in quotes, so it isn't text."),
-  correct = list(correct = TRUE, message = "Correct!")
+quiz_question_server(input, output, session, "types_quiz", module_number = 3, list(
+  wrong_8 = list(correct = FALSE, message = "\"5\" is in quotes, so it's text, not a number -- R won't do math with it."),
+  wrong_53 = list(correct = FALSE, message = "R doesn't glue text together with + (some other languages do). It refuses instead."),
+  correct = list(correct = TRUE, message = "Correct! \"5\" is character (text), and R won't do arithmetic on text: non-numeric argument to binary operator. A number that arrives in quotes -- often from an imported file -- is a classic cause."),
+  wrong_na = list(correct = FALSE, message = "Not NA -- R stops with an error, because + needs numbers on both sides.")
 ))
 
-quiz_question_server(input, output, session, "naming_quiz", list(
-  wrong_startsnum = list(correct = FALSE, message = "Variable names can't start with a number."),
-  wrong_space = list(correct = FALSE, message = "Variable names can't contain spaces."),
-  correct = list(correct = TRUE, message = "Correct!"),
-  wrong_reserved = list(correct = FALSE, message = "TRUE is a reserved word in R -- it can't be used as a variable name.")
+quiz_question_server(input, output, session, "naming_quiz", module_number = 3, list(
+  wrong_95 = list(correct = FALSE, message = "R is case-sensitive: Score and score are two different names, and only Score exists."),
+  correct = list(correct = TRUE, message = "Correct! R is case-sensitive, so score (lowercase) was never created. Copying code between sources is a common way to end up with mismatched capitals."),
+  wrong_5 = list(correct = FALSE, message = "R doesn't treat a missing name as 0 -- it stops with an error."),
+  wrong_na = list(correct = FALSE, message = "R doesn't treat a missing name as NA -- it stops with an error.")
 ))
 
-quiz_question_server(input, output, session, "structures_quiz", list(
-  wrong_vector = list(correct = FALSE, message = "A vector is a single sequence of values -- no rows/columns structure."),
-  wrong_list = list(correct = FALSE, message = "A list can mix types, but it isn't organized into rows and columns."),
-  correct = list(correct = TRUE, message = "Correct!")
+quiz_question_server(input, output, session, "assign_snapshot_quiz", module_number = 3, list(
+  correct = list(correct = TRUE, message = "Correct! total was calculated when price was 4 and stored as the number 12. Changing price later doesn't update it."),
+  wrong_15 = list(correct = FALSE, message = "That's what a spreadsheet formula would do -- but R stored the number 12 in total, not the formula. It doesn't recalculate."),
+  wrong_error = list(correct = FALSE, message = "Reassigning price is perfectly fine -- no error."),
+  wrong_5 = list(correct = FALSE, message = "The last line prints total, not price.")
 ))
 
-quiz_question_server(input, output, session, "comparison_quiz", list(
+quiz_question_server(input, output, session, "vector_na_quiz", module_number = 3, list(
+  correct = list(correct = TRUE, message = "Correct -- and quietly. Asking for a position past the end gives NA, not an error, so a wrong position can slip through unnoticed."),
+  wrong_error = list(correct = FALSE, message = "You'd hope so, but no -- R returns NA without any error or warning."),
+  wrong_66 = list(correct = FALSE, message = "R doesn't give you the last value instead -- position 5 doesn't exist, so it returns NA."),
+  wrong_64 = list(correct = FALSE, message = "R doesn't wrap around to the start -- position 5 doesn't exist, so it returns NA.")
+))
+
+quiz_question_server(input, output, session, "structures_quiz", module_number = 3, list(
+  correct = list(correct = TRUE, message = "Correct! $ pulls one column out of a data frame, and every column is a vector."),
+  wrong_one = list(correct = FALSE, message = "$ gives you the whole column, not just its first value."),
+  wrong_df = list(correct = FALSE, message = "$ gives you the column's values as a plain vector, not a smaller data frame."),
+  wrong_text = list(correct = FALSE, message = "$temp refers to the column named temp, so you get its values, not the word itself.")
+))
+
+quiz_question_server(input, output, session, "comparison_quiz", module_number = 3, list(
   wrong_assign1 = list(correct = FALSE, message = "That assigns 100 to score -- it changes score's value rather than checking it."),
   correct = list(correct = TRUE, message = "Correct!"),
   wrong_assign2 = list(correct = FALSE, message = "That also assigns -- it doesn't check anything.")
 ))
 
-quiz_question_server(input, output, session, "import_quiz", list(
-  wrong_doesnt_work = list(correct = FALSE, message = "It works fine for small amounts of data -- import is about practicality, not a hard limitation."),
-  correct = list(correct = TRUE, message = "Correct!"),
-  wrong_no_wd = list(correct = FALSE, message = "It's the opposite -- import is exactly where the working directory matters most.")
+quiz_question_server(input, output, session, "formula_quiz", module_number = 3, list(
+  correct = list(correct = TRUE, message = "Correct -- the parentheses make the addition happen first."),
+  wrong_precedence = list(correct = FALSE, message = "R divides before it adds, so this is a + (b / 2): for 3 and 7 it gives 6.5, not 5."),
+  wrong_mean = list(correct = FALSE, message = "Sneaky one: mean() averages ONE vector, so mean(a, b) quietly ignores b as a value (it's read as a different argument) and returns a. You'd need mean(c(a, b)).")
 ))
 
-quiz_question_server(input, output, session, "formula_quiz", list(
-  correct = list(correct = TRUE, message = "Correct -- multiplication in the formula becomes * in R."),
-  wrong_plus = list(correct = FALSE, message = "That would add length and width instead of multiplying them -- area is l times w, not l plus w."),
-  wrong_power = list(correct = FALSE, message = "That raises l to the power of w -- the x in the formula means multiplication, not an exponent.")
+quiz_question_server(input, output, session, "import_quiz", module_number = 3, list(
+  correct = list(correct = TRUE, message = "Correct! One value that isn't a number (\"n/a\") makes R read the whole column as text. You'd find out later, when math on it fails."),
+  wrong_csv = list(correct = FALSE, message = "read.csv() reads number columns as numbers -- site is text because it holds letters. depth is the odd one out."),
+  wrong_decimal = list(correct = FALSE, message = "R handles decimals fine -- look at the actual values in depth."),
+  wrong_wd = list(correct = FALSE, message = "If the working directory were wrong, the file wouldn't have loaded at all.")
 ))
 ```
 
@@ -848,114 +923,109 @@ quiz_question_server(input, output, session, "formula_quiz", list(
 # --- Exercise wiring -------------------------------------------------------
 exercise_server(
   input, output, session, "assignment_exercise", "module3_assignment", "tutor_accordion_m3_1",
-  starting_code = "apples <- FIXME\noranges <- FIXME\napples + oranges",
-  evaluate_fn = function(user_code, result, envir, stage) evaluate_assignment_exercise(user_code, result, stage)
+  starting_code = "price <- 4\nqty <- 3\ntotal <- price * qty\nprice <- 5\ntotal",
+  evaluate_fn = function(user_code, result, envir, stage) evaluate_assignment_exercise(user_code, result, envir, stage)
 )
 
 exercise_server(
   input, output, session, "vectors_exercise", "module3_vectors", "tutor_accordion_m3_2",
-  starting_code = "scores <- c(FIXME)\nscores[FIXME]",
+  starting_code = "scores <- c(10, 20, 30, 40)\nscores[]",
   evaluate_fn = function(user_code, result, envir, stage) evaluate_vectors_exercise(user_code, result, stage)
 )
 
 exercise_server(
   input, output, session, "fix_comparison_exercise", "module3_fix_comparison", "tutor_accordion_m3_3",
-  starting_code = "temperature <- 75\ntemperature = 80",
-  evaluate_fn = function(user_code, result, envir, stage) evaluate_fix_comparison_exercise(user_code, result, stage)
+  starting_code = "temps <- c(72, 80, 85, 80, 79)\ntemps = 80\nsum(temps)",
+  evaluate_fn = function(user_code, result, envir, stage) evaluate_fix_comparison_exercise(user_code, result, envir, stage)
 )
 
 exercise_server(
   input, output, session, "formula_exercise", "module3_formula_to_code", "tutor_accordion_m3_5",
-  starting_code = "sqrt(formula_a^FIXME + formula_b^FIXME)",
+  starting_code = "temps_f - 32 * 5 / 9",
   evaluate_fn = function(user_code, result, envir, stage) evaluate_formula_exercise(user_code, result, stage)
 )
 
 exercise_server(
   input, output, session, "module3_cumulative_exercise", "module3_cumulative", "tutor_accordion_m3_4",
-  starting_code = "prices <- c(2.50, 3.75, 1.25 4.00)\ntax_rate = 0.08\ntotal <- sum(prices)\nfinal_total <- total + (total * tax rate)\nfinal_total >= 10",
+  starting_code = "prices <- c(2.50, 3.75, 1.25 4.00)\ntax_rate <- 0.08\ntotal <- sum(prices)\nfinal_total <- total + Tax_rate\nround(final_total, 2)",
   evaluate_fn = function(user_code, result, envir, stage) evaluate_module3_cumulative_exercise(user_code, result, envir, stage)
 )
 ```
 
 ## Module 3: Welcome back
 
-Modules 1 and 2 got you comfortable with R and RStudio as tools -- installing, running code, reading errors. This module is where you start actually working with **data**: the basic building blocks (data types, vectors, variables) that everything later in this course sits on top of.
-
-A quick preview of what "actual code" looks like -- this line just prints a short greeting:
-
-```{r hello-world-demo, echo=TRUE}
-print("Hello, world!")
-```
-
-That's it -- a function (`print`) called with a value in parentheses. Most of what follows is variations on that same basic shape.
+This module covers the building blocks everything else sits on: types of values, variables, vectors, and comparisons. Several exercises here hand you code that **runs without an error but gives the wrong answer** -- the hardest kind of bug to notice. The habit to build: check results against something you already know.
 
 ## Module 3: Data types
 
-Every value in R has a **type**. The three you'll run into constantly:
+Every value in R has a **type**. The three you'll meet constantly:
 
 - **numeric** -- numbers, like `5` or `3.14`
-- **character** -- text, always wrapped in quotes, like `"hello"`
+- **character** -- text, always in quotes, like `"hello"` or `"5"`
 - **logical** -- `TRUE` or `FALSE`
 
-You can check any value's type with `class()`:
+`class()` tells you a value's type:
 
 ```{r class-demo, echo=TRUE}
 class(5)
-class("hello")
+class("5")
 class(TRUE)
 ```
 
-Mixing these up is a common source of errors -- for example, `5` and `"5"` look similar but behave very differently (you can do math with the first, not the second).
+`5` and `"5"` look alike but behave differently: you can do math with the first, not the second.
 
 ```{r, echo=FALSE}
-quiz_question_ui("types_quiz", "What is the data type of the value TRUE?", c(
-  "numeric" = "wrong_numeric",
-  "character" = "wrong_character",
-  "logical" = "correct"
+quiz_question_ui("types_quiz", "What happens when you run \"5\" + 3?", c(
+  "8" = "wrong_8",
+  "\"53\"" = "wrong_53",
+  "An error" = "correct",
+  "NA" = "wrong_na"
 ))
 ```
 
-## Module 3: Naming conventions
+## Module 3: Variables and names
 
-Variable names in R follow a few rules:
-
-- Can contain letters, numbers, `.`, and `_`
-- Cannot start with a number
-- Cannot contain spaces
-- Are case-sensitive -- `Score` and `score` are two different variables
-- Can't be one of R's reserved words (`TRUE`, `FALSE`, `if`, `for`, etc.)
-
-Style-wise, this course uses `snake_case` (lowercase words separated by underscores, like `student_score`) -- you'll see that convention throughout.
-
-```{r, echo=FALSE}
-quiz_question_ui("naming_quiz", "Which of these is a valid R variable name?", c(
-  "2nd_attempt" = "wrong_startsnum",
-  "student score" = "wrong_space",
-  "student_score" = "correct",
-  "TRUE" = "wrong_reserved"
-))
-```
-
-## Module 3: Assignment
-
-**Assignment** is how you store a value in a variable so you can use it later, using the `<-` operator (read as "gets"):
+**Assignment** stores a value under a name with `<-` (read it as "gets"):
 
 ```{r assignment-demo, echo=TRUE}
 student_score <- 92
-student_score
+student_score + 3
 ```
 
-You'll sometimes see `=` used for assignment too, and at the top level it works the same way -- but this course sticks to `<-`, since `=` also means something different (comparison, using `==`) that you'll run into shortly.
+Names can contain letters, numbers, `.` and `_`, but can't start with a number or contain spaces. This course uses `snake_case` (`student_score`). And names are **case-sensitive**.
 
-### Practice: assign and combine
+<details>
+<summary><strong>New to this?</strong> What a variable actually holds.</summary>
 
-Below, assign the number `5` to `apples` and the number `3` to `oranges`, replacing each `FIXME`. Leave the last line as-is -- once both variables are assigned correctly, it should evaluate to `8`.
+Think of `<-` as writing a value on a sticky note and labeling it. `student_score <- 92` puts 92 on a note labeled `student_score`. Later, `student_score + 3` reads the note. The note holds a *value*, not a recipe -- that turns out to matter, as the next question shows.
+
+</details>
 
 ```{r, echo=FALSE}
-exercise_ui("assignment_exercise", "apples <- FIXME\noranges <- FIXME\napples + oranges")
+quiz_question_ui("naming_quiz", "You run Score <- 90, then score + 5. What happens?", c(
+  "95" = "wrong_95",
+  "An error: object 'score' not found" = "correct",
+  "5" = "wrong_5",
+  "NA" = "wrong_na"
+))
 ```
 
-Stuck, or want to double check your thinking? The tutor chat below is available any time -- before you submit, after a failed attempt, or even after you've already passed.
+```{r, echo=FALSE}
+quiz_question_ui("assign_snapshot_quiz", "What does the last line print?  price <- 4;  qty <- 3;  total <- price * qty;  price <- 5;  total", c(
+  "12" = "correct",
+  "15" = "wrong_15",
+  "An error" = "wrong_error",
+  "5" = "wrong_5"
+))
+```
+
+### Practice: update the total
+
+The price went up to 5, but `total` still says 12. Fix the code so the last line prints the total at the new price -- without typing `15` anywhere.
+
+```{r, echo=FALSE}
+exercise_ui("assignment_exercise", "price <- 4\nqty <- 3\ntotal <- price * qty\nprice <- 5\ntotal")
+```
 
 ```{r, echo=FALSE}
 accordion(
@@ -975,28 +1045,33 @@ accordion(
 
 ## Module 3: Vectors
 
-A **vector** is a sequence of values of the same type, built with `c()` (short for "combine"):
+A **vector** is a sequence of values of the same type, built with `c()` ("combine"). Square brackets pull out elements by position -- counting from **1** -- and you can ask for several positions at once:
 
 ```{r vector-demo, echo=TRUE}
 heights <- c(64, 68, 71, 66)
-heights
-```
-
-You can pull out one element by its position using square brackets -- R counts positions starting from **1**, not 0:
-
-```{r vector-index-demo, echo=TRUE}
 heights[1]
+heights[c(1, 3)]
+heights * 2
 ```
 
-### Practice: build and index a vector
-
-Below, build a vector called `scores` containing the numbers `10`, `20`, `30`, and `40` in that order, replacing the first `FIXME`. Then, on the last line, index into `scores` to retrieve its **second** element, replacing the second `FIXME`.
+That last line shows something R does everywhere: an operation on a vector applies to **every element** at once.
 
 ```{r, echo=FALSE}
-exercise_ui("vectors_exercise", "scores <- c(FIXME)\nscores[FIXME]")
+quiz_question_ui("vector_na_quiz", "heights has 4 values. What does heights[5] return?", c(
+  "NA" = "correct",
+  "An error" = "wrong_error",
+  "66 (the last value)" = "wrong_66",
+  "64 (it wraps around)" = "wrong_64"
+))
 ```
 
-Stuck, or want to double check your thinking? The tutor chat below is available any time -- before you submit, after a failed attempt, or even after you've already passed.
+### Practice: pull out two elements
+
+Return only the **2nd and 4th** elements of `scores`, using square brackets.
+
+```{r, echo=FALSE}
+exercise_ui("vectors_exercise", "scores <- c(10, 20, 30, 40)\nscores[]")
+```
 
 ```{r, echo=FALSE}
 accordion(
@@ -1016,56 +1091,49 @@ accordion(
 
 ## Module 3: Data structures
 
-Beyond single vectors, R has a few other ways of organizing data:
+- **vector** -- one sequence of values, all the same type
+- **list** -- a sequence that *can* mix types
+- **data frame** -- a table: rows are observations, columns are variables, and **each column is a vector**. `df$column_name` pulls one column out.
 
-- **vector** -- a sequence of values, all the same type (what you just built above)
-- **list** -- a sequence of values that *can* mix types (a number, some text, even another vector, all in one list)
-- **data frame** -- a table, like a spreadsheet: rows are observations, columns are variables, and each column is really just a vector
-
-You'll work hands-on with data frames starting in Module 4 -- for now, just recognize the terms.
+You'll work with data frames hands-on in Module 4.
 
 ```{r, echo=FALSE}
-quiz_question_ui("structures_quiz", "Which data structure is organized like a spreadsheet, with rows and columns?", c(
-  "vector" = "wrong_vector",
-  "list" = "wrong_list",
-  "data frame" = "correct"
+quiz_question_ui("structures_quiz", "A data frame called sites has columns name and temp. What is sites$temp?", c(
+  "A vector of every value in the temp column" = "correct",
+  "Just the first value in the temp column" = "wrong_one",
+  "A one-row data frame" = "wrong_df",
+  "The text \"temp\"" = "wrong_text"
 ))
 ```
 
-## Module 3: Basic functions and comparisons
+## Module 3: Functions and comparisons
 
-You've already used a few **functions** -- `print()`, `class()`, `c()`. Functions take input in parentheses and do something with it. A few more you'll see often:
+A few functions you'll see constantly: `sum(x)`, `mean(x)`, `round(x, digits)`.
 
-- **`sum(x)`** -- adds up all values in a vector
-- **`mean(x)`** -- the average of a vector's values
-- **`round(x, n)`** -- rounds a number to `n` decimal places
-
-**Comparisons** ask a yes/no question and return `TRUE` or `FALSE`, using operators like `==` (equal to), `!=` (not equal to), `<`, `>`, `<=`, `>=`:
+**Comparisons** ask a yes/no question and give `TRUE` or `FALSE`: `==` (equal to), `!=` (not equal), `<`, `>`, `<=`, `>=`. On a vector, you get one answer per element -- and because R counts `TRUE` as 1, `sum()` of a comparison **counts** how many are true:
 
 ```{r comparison-demo, echo=TRUE}
-10 > 7
-10 == 7
+c(5, 9, 2) > 4
+sum(c(5, 9, 2) > 4)
 ```
 
-The most common beginner mistake here: writing a single `=` when you meant a comparison. A single `=` at the top level *assigns* a value (like `<-` does); only `==` *compares* two values. These look almost identical but do very different things.
+The classic mistake: a single `=` *assigns* (like `<-`); only `==` *compares*.
 
 ```{r, echo=FALSE}
-quiz_question_ui("comparison_quiz", "You want to check whether `score` is equal to 100, without changing its value. Which line does that?", c(
+quiz_question_ui("comparison_quiz", "You want to check whether score is equal to 100, without changing its value. Which line does that?", c(
   "score = 100" = "wrong_assign1",
   "score == 100" = "correct",
   "score <- 100" = "wrong_assign2"
 ))
 ```
 
-### Practice: fix the comparison
+### Practice: count the hot days
 
-The code below is supposed to check whether `temperature` is equal to `80`, **without** changing `temperature`'s original value of `75`. Right now it does the opposite -- fix the second line so it performs a comparison instead of an assignment.
+This should count how many days were exactly 80 degrees (it should be 2). It runs without an error -- but prints 80. Fix it.
 
 ```{r, echo=FALSE}
-exercise_ui("fix_comparison_exercise", "temperature <- 75\ntemperature = 80")
+exercise_ui("fix_comparison_exercise", "temps <- c(72, 80, 85, 80, 79)\ntemps = 80\nsum(temps)")
 ```
-
-Stuck, or want to double check your thinking? The tutor chat below is available any time -- before you submit, after a failed attempt, or even after you've already passed.
 
 ```{r, echo=FALSE}
 accordion(
@@ -1085,9 +1153,7 @@ accordion(
 
 ## Module 3: Turning a formula into code
 
-A lot of real work you'll be handed later comes as a **math formula** rather than ready-made code -- and translating one into the other is a skill on its own. The good news: R's arithmetic symbols line up with math almost exactly. `+`, `-`, `*`, and `/` mean what they look like they mean, `^` raises to a power, and a square root becomes the function `sqrt()`.
-
-For example, converting a temperature from Celsius to Fahrenheit uses the formula:
+Work you're handed later often comes as a **formula**, not code. R's symbols match math closely: `+ - * /`, `^` for powers, `sqrt()` for square roots. The catch is **order of operations**: R does `^` first, then `*` and `/`, then `+` and `-` -- exactly like math class -- so parentheses matter. For example, Celsius to Fahrenheit:
 
 $$
 F = C \times \frac{9}{5} + 32
@@ -1095,35 +1161,32 @@ $$
 
 ```{r formula-demo, echo=TRUE}
 celsius <- c(0, 20, 37)
-fahrenheit <- celsius * 9 / 5 + 32
-fahrenheit
+celsius * 9 / 5 + 32
 ```
 
-Each piece of the formula has a direct match in the code: $C$ is `celsius`, $\times$ is `*`, and the fraction $\frac{9}{5}$ is just `9 / 5`.
+The fastest way to check formula code: **try it on a value you already know.** 0 °C should be 32 °F, and it is.
 
 ```{r, echo=FALSE}
-quiz_question_ui("formula_quiz", "The area of a rectangle is A = l x w (length times width). Which R code correctly computes it?", c(
-  "area <- l * w" = "correct",
-  "area <- l + w" = "wrong_plus",
-  "area <- l^w" = "wrong_power"
+quiz_question_ui("formula_quiz", "Which line computes the average of a and b?", c(
+  "(a + b) / 2" = "correct",
+  "a + b / 2" = "wrong_precedence",
+  "mean(a, b)" = "wrong_mean"
 ))
 ```
 
-### Practice: hypotenuse from a formula
+### Practice: check the AI's conversion
 
-The Pythagorean theorem gives the length of a right triangle's longest side (the hypotenuse) from its two shorter sides:
+An AI assistant wrote this to convert `temps_f` (Fahrenheit) to Celsius, using
 
 $$
-c = \sqrt{a^2 + b^2}
+C = (F - 32) \times \frac{5}{9}
 $$
 
-Below, `formula_a` and `formula_b` are vectors holding the two shorter sides of three different triangles. Translate the formula into code, replacing both `FIXME`s (each should become the power the corresponding side is raised to).
+It runs without an error. Check it against values you know (212 °F is 100 °C, and 32 °F is 0 °C), then fix it.
 
 ```{r, echo=FALSE}
-exercise_ui("formula_exercise", "sqrt(formula_a^FIXME + formula_b^FIXME)")
+exercise_ui("formula_exercise", "temps_f - 32 * 5 / 9")
 ```
-
-Stuck, or want to double check your thinking? The tutor chat below is available any time -- before you submit, after a failed attempt, or even after you've already passed.
 
 ```{r, echo=FALSE}
 accordion(
@@ -1143,35 +1206,34 @@ accordion(
 
 ## Module 3: Importing data
 
-So far every value has been typed directly into your code. In practice, most real data lives in files -- most commonly `.csv` files -- and you **import** it into R rather than retyping it.
+Real data lives in files, most often `.csv`, and you **import** it rather than typing it: `read.csv("file.csv")` reads one into a data frame (the tidyverse's `readr::read_csv()` does the same). The path is relative to your working directory (Module 1).
 
-The base R function for this is `read.csv("filename.csv")`, which reads a CSV file into a data frame. The tidyverse equivalent, `readr::read_csv()`, does the same thing with a few conveniences (faster, slightly stricter about column types).
+The first thing to do after importing is `str()`, to check that each column came in as the type you expect. A column of numbers with even **one** non-number in it -- `"n/a"`, `"-"`, `"<0.5"` -- arrives as text:
 
-Either way, R needs to know *where* the file is -- which is exactly why your working directory (Module 1) matters here: file paths are usually given relative to it.
-
-In this course, you likely won't be importing files from scratch very often -- import code is often provided as part of a script, similar to how you've already been handed code to run in Module 2. What matters most right now is recognizing what import is for and roughly how it works, not memorizing every argument.
+```
+'data.frame':	4 obs. of  2 variables:
+ $ site : chr  "A" "B" "C" "D"
+ $ depth: chr  "1.2" "0.8" "n/a" "2.1"
+```
 
 ```{r, echo=FALSE}
-quiz_question_ui("import_quiz", "Why would you import a data file instead of typing the data directly into your script?", c(
-  "Typing data by hand doesn't work in R." = "wrong_doesnt_work",
-  "Real datasets are often too large (or come from someone else) to reasonably retype, and importing keeps your script in sync with the original data." = "correct",
-  "Imported data doesn't need a working directory." = "wrong_no_wd"
+quiz_question_ui("import_quiz", "In that str() output, why is depth chr (text) instead of num?", c(
+  "One of its values, \"n/a\", isn't a number, so R read the whole column as text" = "correct",
+  "read.csv() always imports every column as text" = "wrong_csv",
+  "R can't store decimal numbers like 1.2" = "wrong_decimal",
+  "The working directory was set wrong" = "wrong_wd"
 ))
 ```
 
 ## Module 3: Putting it together
 
-You've now covered data types, naming, assignment, vectors, data structures, functions, comparisons, and import. Real code rarely uses just one of these skills in isolation -- so this last exercise mixes several together, and asks you to fix more than one problem at once.
+### Practice: fix the receipt
 
-### Practice: fix the receipt calculation
-
-The script below is supposed to calculate a total with tax and check whether it's at least $10 -- but it has more than one problem. Fix it so it runs without errors and the last line evaluates to `TRUE`. (Hint: work through any error message one issue at a time, same as in Module 2.)
+This should print a receipt total including **8% sales tax**, rounded to cents. It has three bugs: two stop it from running, and one lets it run but gives the wrong total. The four prices add up to $11.50 -- use that to check your answer makes sense.
 
 ```{r, echo=FALSE}
-exercise_ui("module3_cumulative_exercise", "prices <- c(2.50, 3.75, 1.25 4.00)\ntax_rate = 0.08\ntotal <- sum(prices)\nfinal_total <- total + (total * tax rate)\nfinal_total >= 10")
+exercise_ui("module3_cumulative_exercise", "prices <- c(2.50, 3.75, 1.25 4.00)\ntax_rate <- 0.08\ntotal <- sum(prices)\nfinal_total <- total + Tax_rate\nround(final_total, 2)")
 ```
-
-Stuck, or want to double check your thinking? The tutor chat below is available any time -- before you submit, after a failed attempt, or even after you've already passed.
 
 ```{r, echo=FALSE}
 accordion(
@@ -1189,23 +1251,18 @@ accordion(
 )
 ```
 
-### Nice work
-
-That last exercise had several moving pieces at once -- a missing comma, a variable name mismatch, and a comparison -- which is a more realistic picture of debugging than fixing one isolated line at a time.
-
 ## Module 3: Wrapping up
-
-You've now got the raw materials everything else in this course is built from: values with types, vectors that hold many of them at once, and the `<-`/`==` distinction that trips up most beginners at least once.
 
 **If you remember only a few things from this module:**
 
-- `<-` assigns, `==` compares -- confusing them is the single most common beginner mistake in this course.
-- A vector holds many values of the *same* type; indexing with `[ ]` pulls one (or more) back out.
-- Translating a formula or real-world calculation into code (like this module's Pythagorean theorem exercise) is a skill you'll keep using, not a one-off.
+- `<-` assigns, `==` compares -- and a single `=` assigns too.
+- A variable holds a value, not a formula: change an input, and anything calculated from it must be recalculated.
+- "It ran without an error" is not "it's right." Check results against something you already know.
+- After importing, check column types with `str()` before trusting anything.
 
 ### Up next
 
-Module 4 moves into cleaning up real data: inspecting a data frame, renaming columns, indexing/subsetting, and the dplyr verbs (filter, select, mutate, arrange, group_by, summarize).
+Module 4 puts this to work on a real (messy) data frame.
 
 ```{r setup-module4, context="setup", include=FALSE}
 library(dplyr)
@@ -1276,20 +1333,23 @@ evaluate_rename_exercise <- function(user_code, result, envir, stage) {
 
 evaluate_indexing_exercise <- function(user_code, result, stage) {
   uses_bracket <- grepl("\\[", user_code)
-  correct_result <- is.data.frame(result) && nrow(result) == 5 && all(result$lake_site == "North Lake")
+  uses_double_equals <- grepl("==", user_code, fixed = TRUE)
+  correct_result <- is.data.frame(result) && nrow(result) == 5 && ncol(result) == 5 && all(result$lake_site == "North Lake")
 
   passed <- uses_bracket && correct_result
 
   feedback_message <- if (passed) {
-    "That's it -- 5 rows, all from North Lake."
+    "Fixed -- 5 rows, all from North Lake, every column kept."
+  } else if (identical(stage, "error_check") && !uses_double_equals) {
+    "Still doesn't run. Inside a condition, = and == mean very different things -- which one compares two values?"
   } else if (identical(stage, "error_check")) {
-    "That code doesn't run as-is -- check the comma inside the brackets (rows go before it, columns after -- leaving columns blank keeps them all)."
+    "The comparison looks right now, but R says it can't find those columns. Square brackets on a data frame take two parts -- what separates them, and which part is this condition for?"
   } else if (!uses_bracket) {
-    "Use square-bracket indexing here (fish_clean[ ... , ]), not a dplyr verb -- that's the point of this exercise."
-  } else if (is.data.frame(result) && nrow(result) != 5) {
-    "That ran, but it isn't returning exactly the 5 North Lake rows yet -- double check the comparison inside the brackets."
+    "Keep using square-bracket indexing here (fish_clean[ ... ]), not a dplyr verb -- the point is to fix this code, not replace it."
+  } else if ((is.data.frame(result) && ncol(result) != 5) || (!is.data.frame(result) && length(result) == 5)) {
+    "The right rows, but not every column -- what goes after the comma decides the columns, and leaving it blank keeps them all."
   } else {
-    "Check that you're comparing lake_site to exactly \"North Lake\" (spelling and capitalization matter) before the comma."
+    "That runs, but it isn't returning exactly the 5 North Lake rows -- check the comparison (spelling and capitalization of \"North Lake\" matter)."
   }
 
   list(passed = passed, message = feedback_message)
@@ -1298,25 +1358,27 @@ evaluate_indexing_exercise <- function(user_code, result, stage) {
 evaluate_filter_select_exercise <- function(user_code, result, stage) {
   uses_filter <- grepl("filter\\s*\\(", user_code)
   uses_select <- grepl("select\\s*\\(", user_code)
-  correct_result <- is.data.frame(result) &&
-    identical(names(result), c("species", "length_mm")) &&
-    nrow(result) == 4 &&
-    all(result$species == "Bluegill")
+  right_cols <- is.data.frame(result) && identical(names(result), c("species", "length_mm"))
+  correct_result <- right_cols && nrow(result) == 2 && all(result$length_mm > 200)
 
   passed <- uses_filter && uses_select && correct_result
 
   feedback_message <- if (passed) {
-    "Right -- 4 Bluegill rows, with just species and length_mm kept."
+    "Right -- just the two big South Lake fish (both Largemouth Bass). Notice the South Lake fish with a missing length didn't sneak in: filter() drops rows where the condition is NA."
   } else if (identical(stage, "error_check")) {
-    "That code doesn't run as-is -- check the pipe (|>) connects each step, and filter()'s condition uses ==, not =."
+    "That code doesn't run as-is -- check that each condition compares with == or >, that text values are in quotes, and that each step is joined by |>."
   } else if (!uses_filter) {
-    "This still needs a filter() step to keep only the Bluegill rows."
+    "This needs a filter() step to keep only the rows you want."
   } else if (!uses_select) {
-    "This still needs a select() step to keep only species and length_mm."
-  } else if (is.data.frame(result) && nrow(result) != 4) {
-    "filter() and select() are both there, but the row count isn't right yet -- double check the species name inside filter()."
+    "This needs a select() step so only species and length_mm are left."
+  } else if (!right_cols) {
+    "The columns aren't right yet -- the result should have exactly species and length_mm, in that order."
+  } else if (nrow(result) == 5) {
+    "That's every South Lake fish, of any length -- filter() needs a second condition for length."
+  } else if (nrow(result) == 4) {
+    "Those are the long fish from BOTH lakes -- filter() also needs the lake condition."
   } else {
-    "filter() and select() both ran, but the columns kept aren't exactly species and length_mm -- check select()'s arguments."
+    "Not quite the right rows -- you should end up with exactly 2 fish. Check both conditions inside filter()."
   }
 
   list(passed = passed, message = feedback_message)
@@ -1334,13 +1396,13 @@ evaluate_mutate_arrange_exercise <- function(user_code, result, stage) {
   feedback_message <- if (passed) {
     "weight_kg is calculated correctly, and the rows are sorted with the longest fish first."
   } else if (identical(stage, "error_check")) {
-    "That code doesn't run as-is -- check both mutate()'s and arrange()'s arguments are complete, valid R expressions."
+    "That code doesn't run as-is -- check both mutate()'s and arrange()'s arguments are complete, valid R expressions, joined by |>."
   } else if (!uses_mutate || !has_weight_kg) {
-    "mutate() should add a new weight_kg column, equal to weight_g divided by 1000."
+    "mutate() should add a new column named exactly weight_kg."
   } else if (!correct_kg) {
-    "weight_kg exists, but its values aren't weight_g / 1000 yet -- check the formula inside mutate()."
+    "weight_kg exists, but its values aren't the weight in kilograms yet -- how many grams are in a kilogram?"
   } else if (!uses_arrange || !correct_order) {
-    "weight_kg looks right, but the rows aren't sorted longest-to-shortest yet -- check that arrange() is using desc() on length_mm."
+    "weight_kg looks right, but the longest fish isn't first yet -- arrange() sorts smallest-first unless you tell it otherwise."
   } else {
     "Almost there -- double check both the mutate() and arrange() steps."
   }
@@ -1351,24 +1413,29 @@ evaluate_mutate_arrange_exercise <- function(user_code, result, stage) {
 evaluate_group_summarize_exercise <- function(user_code, result, stage) {
   uses_group_by <- grepl("group_by\\s*\\(", user_code)
   uses_summarize <- grepl("summari[sz]e\\s*\\(", user_code)
-  has_col <- is.data.frame(result) && "mean_length" %in% names(result)
-  right_shape <- is.data.frame(result) && nrow(result) == 3
-  no_na <- has_col && right_shape && !any(is.na(result$mean_length))
+  has_cols <- is.data.frame(result) && all(c("max_weight", "n_fish") %in% names(result))
+  right_shape <- is.data.frame(result) && nrow(result) == 3 && "species" %in% names(result)
+  right_counts <- has_cols && right_shape &&
+    identical(as.integer(result$n_fish[order(result$species)]), c(4L, 3L, 3L))
+  no_na <- has_cols && right_shape && !any(is.na(result$max_weight))
+  right_values <- no_na && isTRUE(all.equal(as.numeric(result$max_weight[order(result$species)]), c(50, 610, 98)))
 
-  passed <- uses_group_by && uses_summarize && has_col && right_shape && no_na
+  passed <- uses_group_by && uses_summarize && has_cols && right_shape && right_counts && right_values
 
   feedback_message <- if (passed) {
-    "Three species, each with a clean (non-NA) average length -- exactly right."
+    "Three species, each with its heaviest weight and a fish count -- exactly right. (Notice n_fish still counts every fish, including the ones whose weight is missing.)"
   } else if (identical(stage, "error_check")) {
-    "That code doesn't run as-is -- check group_by()'s and summarize()'s arguments are complete."
-  } else if (!uses_group_by) {
-    "This needs a group_by() step, grouping by species."
-  } else if (!has_col) {
-    "summarize() should create a column named exactly mean_length."
-  } else if (!right_shape) {
-    "Check that you're grouping by species -- there are 3 species in this data, and something else is producing a different number of groups."
+    "That code doesn't run as-is -- check that group_by() and summarize() are joined by |>, and that summarize()'s two results are separated by a comma."
+  } else if (!uses_group_by || !right_shape) {
+    "You should get one row per species (3 rows) -- check what you're grouping by."
+  } else if (!has_cols) {
+    "summarize() should create two columns, named exactly max_weight and n_fish."
+  } else if (!right_counts) {
+    "n_fish isn't counting the fish in each group correctly yet -- the demo above shows the function that counts rows per group."
   } else if (!no_na) {
-    "mean_length is coming out NA for at least one species -- length_mm has a missing value, so mean() needs na.rm = TRUE."
+    "Look at the printed result: some species' max_weight is NA. What's different about those species' data, and how do you tell max() to cope with it?"
+  } else if (!right_values) {
+    "max_weight should be each species' single heaviest fish -- check that you're using max() on weight_g."
   } else {
     "Close -- double check both steps."
   }
@@ -1379,21 +1446,27 @@ evaluate_group_summarize_exercise <- function(user_code, result, stage) {
 evaluate_na_handling_exercise <- function(user_code, result, stage) {
   uses_filter <- grepl("filter\\s*\\(", user_code)
   uses_is_na <- grepl("is\\.na\\s*\\(", user_code)
-  has_col <- is.data.frame(result) && "avg_weight" %in% names(result)
-  correct_result <- has_col && !is.na(result$avg_weight[1]) && isTRUE(all.equal(result$avg_weight[1], 195))
+  uses_na_rm <- grepl("na\\.rm", user_code)
+  has_col <- is.data.frame(result) && "avg_weight" %in% names(result) && "species" %in% names(result) && nrow(result) == 3
+  correct_result <- has_col &&
+    isTRUE(all.equal(result$avg_weight[order(result$species)], c(44.25, 595, 96.5)))
 
   passed <- uses_filter && uses_is_na && correct_result
 
   feedback_message <- if (passed) {
-    "195 -- exactly right, and the missing rows never made it into the average."
+    "Fixed -- every species has a real average now, with the two fish of unknown weight left out before averaging."
   } else if (identical(stage, "error_check")) {
-    "That code doesn't run as-is -- check that ! and is.na(...) are written correctly inside filter()."
+    "That code doesn't run as-is -- check that the new filter() step is joined with |> and that ! and is.na(...) are written correctly."
+  } else if (uses_na_rm && !uses_filter) {
+    "na.rm = TRUE would fix the NA too -- but this exercise is about the other approach: removing the incomplete rows with filter() before averaging."
   } else if (!uses_filter || !uses_is_na) {
-    "filter() should keep only the rows where weight_g is NOT missing -- use is.na() with ! in front of it."
-  } else if (has_col && is.na(result$avg_weight[1])) {
-    "avg_weight is still coming out NA -- the missing rows aren't being filtered out yet."
+    "Add a filter() step that keeps only rows where weight_g is NOT missing -- is.na() finds missing values, and ! flips TRUE/FALSE."
+  } else if (has_col && any(is.na(result$avg_weight))) {
+    "Still NA -- check the filter() keeps the rows that are NOT missing (and that it runs before summarize())."
+  } else if (!has_col) {
+    "The result should still have one row per species with an avg_weight column -- keep the original group_by() and summarize() steps."
   } else {
-    "That's filtering something, but avg_weight isn't 195 yet -- double check the condition inside filter()."
+    "That's filtering something, but the averages aren't right yet -- double check the condition inside filter()."
   }
 
   list(passed = passed, message = feedback_message)
@@ -1403,28 +1476,28 @@ evaluate_module4_cumulative_exercise <- function(user_code, result, stage) {
   uses_filter <- grepl("filter\\s*\\(", user_code)
   uses_group_by <- grepl("group_by\\s*\\(", user_code)
   uses_arrange <- grepl("arrange\\s*\\(", user_code)
-  right_shape <- is.data.frame(result) && nrow(result) == 2 && "avg_length" %in% names(result)
-  no_na <- right_shape && !any(is.na(result$avg_length))
+  is_df <- is.data.frame(result) && "avg_length" %in% names(result)
+  by_lake <- is_df && "lake_site" %in% names(result)
+  right_shape <- by_lake && nrow(result) == 2
+  no_na <- is_df && nrow(result) > 0 && !any(is.na(result$avg_length))
   right_order <- right_shape && identical(as.character(result$lake_site[1]), "South Lake")
 
   passed <- uses_filter && uses_group_by && uses_arrange && right_shape && no_na && right_order
 
   feedback_message <- if (passed) {
-    "That's the full pipeline -- missing lengths filtered out, averaged per lake, and sorted with the higher average first (South Lake)."
+    "All three bugs fixed -- missing lengths dropped, averaged per lake, highest first (South Lake, 237 mm)."
   } else if (identical(stage, "error_check")) {
-    "That code doesn't run as-is -- work through it one pipe step at a time, same as you've done in earlier modules."
-  } else if (!uses_filter) {
-    "Start with a filter() step that removes rows where length_mm is missing."
-  } else if (!uses_group_by) {
-    "This needs a group_by() step, grouping by lake_site."
-  } else if (!right_shape) {
-    "Check that summarize() is creating a column named exactly avg_length, and that group_by(lake_site) is producing 2 groups."
-  } else if (!no_na) {
-    "avg_length is coming out NA for at least one lake -- make sure the filter() step (removing missing length_mm rows) comes before the average is calculated."
-  } else if (!uses_arrange || !right_order) {
-    "The averages look right, but they're not sorted highest-to-lowest yet -- check that arrange() is using desc() on avg_length."
+    "That code doesn't run as-is now -- work through it one pipe step at a time (try running just the first line or two to see what each produces)."
+  } else if (!is_df || !uses_filter || !uses_group_by || !uses_arrange) {
+    "Keep all four steps (filter, group_by, summarize, arrange) -- each has a bug to fix, but none should be removed."
+  } else if (!no_na || nrow(result) < 2) {
+    "Look at what the filter() step keeps: is.na(length_mm) is TRUE for the rows that ARE missing. Is that what you want to keep?"
+  } else if (!by_lake || !right_shape) {
+    "The goal is one average per LAKE -- check what the data is being grouped by."
+  } else if (!right_order) {
+    "The averages are right, but the lowest one is first -- the goal asks for the highest average first."
   } else {
-    "Close -- double check each step of the pipeline."
+    "Close -- double check each step against the goal."
   }
 
   list(passed = passed, message = feedback_message)
@@ -1444,129 +1517,157 @@ wire_tutor_chat("module4_cumulative", "tutor_chat_m4_7", "tutor_accordion_m4_7",
 
 ```{r, context="server"}
 # --- Quiz question wiring ------------------------------------------------
-quiz_question_server(input, output, session, "inspect_quiz", list(
-  wrong_nrow = list(correct = FALSE, message = "nrow() only tells you the number of rows -- not each column's type."),
-  correct = list(correct = TRUE, message = "Correct!"),
-  wrong_sum = list(correct = FALSE, message = "sum() only works on numeric vectors, not a whole data frame with mixed column types.")
+# Module 4's quizzes are deliberately "predict the result" questions, not
+# definition recall -- each answer has to be reasoned out from the data or
+# the code shown, and every wrong option is a specific, common mistake.
+quiz_question_server(input, output, session, "inspect_quiz", module_number = 4, list(
+  wrong_vector = list(correct = FALSE, message = "Close -- that gives one TRUE/FALSE per fish. You'd still have to count the TRUEs. What adds them up?"),
+  correct = list(correct = TRUE, message = "Correct! is.na() marks each missing value TRUE, and sum() counts TRUEs (TRUE counts as 1). There are 2."),
+  wrong_length = list(correct = FALSE, message = "length() counts every value in the column, missing or not -- that's 10."),
+  wrong_dims = list(correct = FALSE, message = "That's just rows minus columns (10 - 5) -- it doesn't look at the values at all.")
 ))
 
-quiz_question_server(input, output, session, "indexing_quiz", list(
-  correct = list(correct = TRUE, message = "Correct!"),
-  wrong_compare = list(correct = FALSE, message = "It's not comparing two data frames -- it's separating rows from columns within one."),
-  wrong_rename = list(correct = FALSE, message = "Indexing brackets aren't for renaming -- that's what rename() is for.")
+quiz_question_server(input, output, session, "indexing_quiz", module_number = 4, list(
+  correct = list(correct = TRUE, message = "Correct! Row 2, column \"species\" -- a single value."),
+  wrong_column = list(correct = FALSE, message = "That would be fish_clean[, \"species\"] -- with the row part left blank. Here the row part is 2."),
+  wrong_row = list(correct = FALSE, message = "That would be fish_clean[2, ] -- with the column part left blank. Here the column part is \"species\"."),
+  wrong_error = list(correct = FALSE, message = "Mixing a row number and a column name is fine -- each side of the comma is handled separately.")
 ))
 
-quiz_question_server(input, output, session, "pipe_quiz", list(
-  correct = list(correct = TRUE, message = "Correct!"),
-  wrong_multiply = list(correct = FALSE, message = "The pipe isn't arithmetic -- it just passes the left side in as the first argument to the right side."),
-  wrong_dataframe_only = list(correct = FALSE, message = "The pipe works with any kind of value, not just data frames.")
+quiz_question_server(input, output, session, "pipe_quiz", module_number = 4, list(
+  correct = list(correct = TRUE, message = "Correct! sqrt() runs first, giving 2, 3, 4 -- then sum() adds those up to 9."),
+  wrong_order = list(correct = FALSE, message = "That's sqrt(sum(...)) -- the steps in the other order. The pipe runs left to right: sqrt first, then sum."),
+  wrong_nosqrt = list(correct = FALSE, message = "That's the sum without the square roots -- but sqrt() runs first here."),
+  wrong_vector = list(correct = FALSE, message = "That's what you'd have after sqrt() -- but there's one more step after it.")
 ))
 
-quiz_question_server(input, output, session, "na_quiz", list(
+quiz_question_server(input, output, session, "arrange_na_quiz", module_number = 4, list(
+  correct = list(correct = TRUE, message = "Correct! arrange() always puts NA at the very end -- even with desc(). Worth remembering when \"the last row\" looks odd."),
+  wrong_first = list(correct = FALSE, message = "desc() flips the order of the real values, but NA isn't a value it can rank -- it always goes last."),
+  wrong_dropped = list(correct = FALSE, message = "arrange() only reorders rows -- it never removes any. (filter() is the one that drops rows.)"),
+  wrong_error = list(correct = FALSE, message = "No error -- arrange() handles missing values fine; it just has a fixed place to put them.")
+))
+
+quiz_question_server(input, output, session, "group_count_quiz", module_number = 4, list(
+  correct = list(correct = TRUE, message = "Correct! One row per species/lake combination that actually appears in the data -- and there are 5 of them."),
+  wrong_all_combos = list(correct = FALSE, message = "3 species x 2 lakes is 6 possible combinations -- but Largemouth Bass only shows up in South Lake, so only 5 actually occur."),
+  wrong_species_only = list(correct = FALSE, message = "That's what group_by(species) alone would give. Grouping by two columns splits each species further by lake."),
+  wrong_rows = list(correct = FALSE, message = "summarize() collapses each group down to ONE row -- so the result has one row per group, not one per fish.")
+))
+
+quiz_question_server(input, output, session, "na_quiz", module_number = 4, list(
   wrong_20 = list(correct = FALSE, message = "R doesn't just skip the NA silently -- it has to be told to."),
   correct = list(correct = TRUE, message = "Correct! Any arithmetic involving NA returns NA by default, unless you tell R how to handle it."),
   wrong_40 = list(correct = FALSE, message = "R doesn't treat a missing value as 0 -- it treats the whole result as unknown (NA).")
+))
+
+quiz_question_server(input, output, session, "bracket_na_quiz", module_number = 4, list(
+  wrong_4 = list(correct = FALSE, message = "That's what filter(length_mm > 200) would give -- filter() drops rows where the condition is NA. Square brackets don't."),
+  correct = list(correct = TRUE, message = "Correct -- and it's a sneaky one. 4 fish are over 200 mm, but the fish with a missing length gives NA instead of TRUE/FALSE, and square brackets return a row of all NAs for it. filter() would give 4."),
+  wrong_9 = list(correct = FALSE, message = "Only 4 fish are actually longer than 200 mm -- the question is what happens to the one with a missing length."),
+  wrong_error = list(correct = FALSE, message = "No error -- R runs this happily. That's what makes it dangerous: the result quietly includes a row you didn't ask for.")
 ))
 ```
 
 ```{r, context="server"}
 # --- Exercise wiring -------------------------------------------------------
+# Scaffolding fades across the module: rename gives one worked pair; the
+# middle exercises start from a blank pipe; the last two are "here's broken
+# code, fix it" -- reading and debugging code someone else wrote, which is
+# most of what students will do with R after this course.
 exercise_server(
   input, output, session, "rename_exercise", "module4_rename", "tutor_accordion_m4_1",
-  starting_code = "fish_clean <- fish_survey |> rename(\n  fish_id = FIXME,\n  species = FIXME,\n  length_mm = FIXME,\n  weight_g = FIXME,\n  lake_site = FIXME\n)\nnames(fish_clean)",
+  starting_code = "fish_clean <- fish_survey |> rename(\n  fish_id = Fish.ID\n)\nnames(fish_clean)",
   evaluate_fn = function(user_code, result, envir, stage) evaluate_rename_exercise(user_code, result, envir, stage)
 )
 
 exercise_server(
   input, output, session, "indexing_exercise", "module4_indexing", "tutor_accordion_m4_2",
-  starting_code = "fish_clean[fish_clean$lake_site == FIXME, ]",
+  starting_code = "fish_clean[fish_clean$lake_site = \"North Lake\"]",
   evaluate_fn = function(user_code, result, envir, stage) evaluate_indexing_exercise(user_code, result, stage)
 )
 
 exercise_server(
   input, output, session, "filter_select_exercise", "module4_filter_select", "tutor_accordion_m4_3",
-  starting_code = "fish_clean |>\n  filter(species == FIXME) |>\n  select(species, FIXME)",
+  starting_code = "fish_clean |>\n  ",
   evaluate_fn = function(user_code, result, envir, stage) evaluate_filter_select_exercise(user_code, result, stage)
 )
 
 exercise_server(
   input, output, session, "mutate_arrange_exercise", "module4_mutate_arrange", "tutor_accordion_m4_4",
-  starting_code = "fish_clean |>\n  mutate(weight_kg = FIXME) |>\n  arrange(FIXME)",
+  starting_code = "fish_clean |>\n  ",
   evaluate_fn = function(user_code, result, envir, stage) evaluate_mutate_arrange_exercise(user_code, result, stage)
 )
 
 exercise_server(
   input, output, session, "group_summarize_exercise", "module4_group_summarize", "tutor_accordion_m4_5",
-  starting_code = "fish_clean |>\n  group_by(FIXME) |>\n  summarize(mean_length = mean(length_mm, na.rm = FIXME))",
+  starting_code = "fish_clean |>\n  ",
   evaluate_fn = function(user_code, result, envir, stage) evaluate_group_summarize_exercise(user_code, result, stage)
 )
 
 exercise_server(
   input, output, session, "na_handling_exercise", "module4_na_handling", "tutor_accordion_m4_6",
-  starting_code = "fish_clean |>\n  filter(FIXME) |>\n  summarize(avg_weight = mean(weight_g))",
+  starting_code = "fish_clean |>\n  group_by(species) |>\n  summarize(avg_weight = mean(weight_g))",
   evaluate_fn = function(user_code, result, envir, stage) evaluate_na_handling_exercise(user_code, result, stage)
 )
 
 exercise_server(
   input, output, session, "module4_cumulative_exercise", "module4_cumulative", "tutor_accordion_m4_7",
-  starting_code = "fish_clean |>\n  filter(FIXME) |>\n  group_by(FIXME) |>\n  summarize(avg_length = mean(length_mm)) |>\n  arrange(FIXME)",
+  starting_code = "fish_clean |>\n  filter(is.na(length_mm)) |>\n  group_by(species) |>\n  summarize(avg_length = mean(length_mm)) |>\n  arrange(avg_length)",
   evaluate_fn = function(user_code, result, envir, stage) evaluate_module4_cumulative_exercise(user_code, result, stage)
 )
 ```
 
 ## Module 4: Welcome back
 
-Modules 1-3 got you comfortable with R itself: running code, reading errors, and working with the basic building blocks (values, vectors, data frames as a concept). This module is where you start actually **working with a real data frame** -- inspecting it, cleaning it up, and asking questions of it using `dplyr`, the most common R package for this kind of work.
+This module is where you start **working with a real data frame**: inspecting it, cleaning it, and asking it questions with `dplyr`. The exercises get harder as you go and lean less and less on fill-in-the-blanks -- by the end you'll be fixing broken code someone else wrote, which is most of what working with R actually looks like.
 
-Throughout this module you'll use a small practice data set, `fish_survey` -- results from a (fictional) fish survey of two lakes. It looks like this:
+When you get stuck, open **Ask the Tutor** under the exercise -- before submitting, after a miss, or after passing. It sees your latest attempt and will help you get there without just handing you the answer.
+
+The data is `fish_survey`, from a (fictional) survey of two lakes. Notice the awkward column names and the missing values (`NA`) -- dealing with both is what this module is about.
 
 ```{r fish-survey-demo, echo=TRUE}
 fish_survey
 ```
 
-Real data almost never arrives this clean-looking, though -- notice the column names (`Fish.ID`, `Species.Name`, ...) and the couple of missing values (`NA`). Both of those are exactly what this module is about.
-
 ## Module 4: Inspecting a data frame
 
-Before changing anything, it's worth looking at what you actually have. A few functions for that:
+Look before you change anything:
 
-- **`str(x)`** -- a compact summary: each column's name, type, and a preview of its values
+- **`str(x)`** -- each column's name, type, and first few values
 - **`head(x)`** -- the first few rows
 - **`nrow(x)` / `ncol(x)`** -- the number of rows / columns
-- **`names(x)`** -- just the column names
-- **`summary(x)`** -- basic statistics (min, max, mean, etc.) for each column
+- **`names(x)`** -- the column names
+- **`summary(x)`** -- min, max, mean, and how many values are missing, per column
 
 ```{r inspect-demo, echo=TRUE}
 str(fish_survey)
 ```
 
 ```{r, echo=FALSE}
-quiz_question_ui("inspect_quiz", "Which function would you use to quickly see each column's data type and a preview of its values?", c(
-  "nrow(fish_survey)" = "wrong_nrow",
-  "str(fish_survey)" = "correct",
-  "sum(fish_survey)" = "wrong_sum"
+quiz_question_ui("inspect_quiz", "Which line tells you how many fish have a missing weight?", c(
+  "is.na(fish_survey$Weight.g)" = "wrong_vector",
+  "sum(is.na(fish_survey$Weight.g))" = "correct",
+  "length(fish_survey$Weight.g)" = "wrong_length",
+  "nrow(fish_survey) - ncol(fish_survey)" = "wrong_dims"
 ))
 ```
 
 ## Module 4: Renaming columns
 
-`fish_survey`'s column names (`Fish.ID`, `Species.Name`, `Length.mm`, `Weight.g`, `Lake.Site`) are a common side effect of importing data from a spreadsheet or CSV -- spaces and mixed capitalization get replaced with dots. Before doing anything else, it's worth renaming them to this course's `snake_case` convention, using dplyr's `rename()`:
+Imported data often arrives with names like `Species.Name`. `rename()` fixes them, always written `new_name = OldName`:
 
 ```{r rename-demo, echo=TRUE}
 fish_survey |> rename(species = Species.Name) |> names()
 ```
 
-`rename()` always reads as `new_name = OldName` -- the new name comes first.
-
 ### Practice: rename every column
 
-Below, rename all five columns of `fish_survey` to `fish_id`, `species`, `length_mm`, `weight_g`, and `lake_site` (in that order), replacing each `FIXME` with the matching original column name. Store the result in `fish_clean` -- you'll use that cleaned-up version for the rest of this module.
+Rename all five columns to `fish_id`, `species`, `length_mm`, `weight_g`, and `lake_site`, storing the result as `fish_clean`. The first one is done for you -- add the other four inside the same `rename()`, separated by commas.
 
 ```{r, echo=FALSE}
-exercise_ui("rename_exercise", "fish_clean <- fish_survey |> rename(\n  fish_id = FIXME,\n  species = FIXME,\n  length_mm = FIXME,\n  weight_g = FIXME,\n  lake_site = FIXME\n)\nnames(fish_clean)")
+exercise_ui("rename_exercise", "fish_clean <- fish_survey |> rename(\n  fish_id = Fish.ID\n)\nnames(fish_clean)")
 ```
-
-Stuck, or want to double check your thinking? The tutor chat below is available any time -- before you submit, after a failed attempt, or even after you've already passed.
 
 ```{r, echo=FALSE}
 accordion(
@@ -1586,38 +1687,31 @@ accordion(
 
 ## Module 4: Indexing and subsetting
 
-From here on, every exercise and demo uses `fish_clean` -- the already-renamed version of the data (so this module doesn't depend on your rename exercise above being correct).
+From here on, everything uses `fish_clean` -- an already-renamed copy, so nothing depends on your rename answer.
 
-Before dplyr, base R already has a way to pull out specific rows and columns, using square brackets: `df[rows, columns]`. Leaving either side blank keeps everything on that side.
+Base R pulls out rows and columns with square brackets: `df[rows, columns]`. Leave a side blank to keep all of it, and use a condition in place of row numbers to keep only matching rows:
 
 ```{r indexing-demo, echo=TRUE}
 fish_clean[1, ]
-fish_clean[, "species"]
-```
-
-You can also use a condition instead of a row number, to keep only rows matching that condition:
-
-```{r indexing-condition-demo, echo=TRUE}
-fish_clean[fish_clean$species == "Bluegill", ]
+fish_clean[fish_clean$species == "Bluegill", c("species", "length_mm")]
 ```
 
 ```{r, echo=FALSE}
-quiz_question_ui("indexing_quiz", "In fish_clean[fish_clean$lake_site == \"North Lake\", ], what does the comma separate?", c(
-  "Rows (before the comma) from columns (after the comma)" = "correct",
-  "Two separate data frames being compared" = "wrong_compare",
-  "The old column name from the new one" = "wrong_rename"
+quiz_question_ui("indexing_quiz", "What does fish_clean[2, \"species\"] return?", c(
+  "The single value \"Bluegill\"" = "correct",
+  "The whole species column" = "wrong_column",
+  "Row 2, with every column" = "wrong_row",
+  "An error -- you can't mix a row number and a column name" = "wrong_error"
 ))
 ```
 
-### Practice: subset by condition
+### Practice: fix the subset
 
-Below, using square-bracket indexing (not a dplyr verb), return only the rows of `fish_clean` where `lake_site` equals `"North Lake"`, replacing `FIXME`.
+This line is meant to return every North Lake fish, with all columns -- but it doesn't run. There are two problems; R's error messages will point you at them one at a time.
 
 ```{r, echo=FALSE}
-exercise_ui("indexing_exercise", "fish_clean[fish_clean$lake_site == FIXME, ]")
+exercise_ui("indexing_exercise", "fish_clean[fish_clean$lake_site = \"North Lake\"]")
 ```
-
-Stuck, or want to double check your thinking? The tutor chat below is available any time -- before you submit, after a failed attempt, or even after you've already passed.
 
 ```{r, echo=FALSE}
 accordion(
@@ -1637,46 +1731,39 @@ accordion(
 
 ## Module 4: The pipe operator
 
-Bracket indexing works, but it gets hard to read once you start chaining several steps together. R's **pipe operator**, `|>`, takes the value on its left and passes it in as the first argument to the function on its right -- so `x |> mean()` is exactly the same as `mean(x)`.
+The pipe, `|>`, passes the value on its left in as the first argument of the function on its right: `x |> mean()` is the same as `mean(x)`. Chains read left to right, as "then":
 
 ```{r pipe-demo, echo=TRUE}
 fish_clean$length_mm |> mean(na.rm = TRUE)
 ```
 
-The real value shows up once you chain multiple steps: `x |> f() |> g()` reads left-to-right as "start with x, do f, then do g" -- which is exactly how the rest of this module's dplyr code is written.
-
 ```{r, echo=FALSE}
-quiz_question_ui("pipe_quiz", "What does x |> mean() do?", c(
-  "Passes x as the first argument to mean(), same as mean(x)" = "correct",
-  "Multiplies x by the result of mean()" = "wrong_multiply",
-  "Only works if x is a data frame" = "wrong_dataframe_only"
+quiz_question_ui("pipe_quiz", "What does c(4, 9, 16) |> sqrt() |> sum() return?", c(
+  "9" = "correct",
+  "5.39 (the square root of 29)" = "wrong_order",
+  "29" = "wrong_nosqrt",
+  "c(2, 3, 4)" = "wrong_vector"
 ))
 ```
 
 ## Module 4: Filtering and selecting
 
-Two of dplyr's most common verbs:
-
-- **`filter(df, condition)`** -- keep only rows matching a condition
-- **`select(df, col1, col2, ...)`** -- keep only specific columns
-
-Chained with the pipe:
+- **`filter()`** keeps the rows that match a condition. Give it several conditions separated by commas, and a row has to meet **all** of them.
+- **`select()`** keeps only the columns you name.
 
 ```{r filter-select-demo, echo=TRUE}
 fish_clean |>
-  filter(lake_site == "South Lake") |>
-  select(species, weight_g)
+  filter(species == "Bluegill", length_mm < 150) |>
+  select(fish_id, lake_site)
 ```
 
 ### Practice: filter and select
 
-Below, starting from `fish_clean`, keep only the rows where `species` is `"Bluegill"`, then keep only the `species` and `length_mm` columns. Replace both `FIXME`s.
+Starting from `fish_clean`, keep only **South Lake** fish **longer than 200 mm**, showing just their `species` and `length_mm`.
 
 ```{r, echo=FALSE}
-exercise_ui("filter_select_exercise", "fish_clean |>\n  filter(species == FIXME) |>\n  select(species, FIXME)")
+exercise_ui("filter_select_exercise", "fish_clean |>\n  ")
 ```
-
-Stuck, or want to double check your thinking? The tutor chat below is available any time -- before you submit, after a failed attempt, or even after you've already passed.
 
 ```{r, echo=FALSE}
 accordion(
@@ -1696,10 +1783,8 @@ accordion(
 
 ## Module 4: Adding columns and sorting
 
-Two more dplyr verbs:
-
-- **`mutate(df, new_col = expression)`** -- add a new column, calculated from existing ones
-- **`arrange(df, col)`** -- sort rows by a column (ascending by default; wrap it in `desc()` for descending)
+- **`mutate(new_col = ...)`** adds a column calculated from existing ones.
+- **`arrange(col)`** sorts rows smallest-first; **`arrange(desc(col))`** sorts largest-first.
 
 ```{r mutate-arrange-demo, echo=TRUE}
 fish_clean |>
@@ -1707,15 +1792,22 @@ fish_clean |>
   arrange(desc(weight_g))
 ```
 
-### Practice: add a column and sort
-
-Below, starting from `fish_clean`, add a new column `weight_kg` equal to `weight_g` divided by `1000`, then sort the rows so the longest fish (by `length_mm`) comes first. Replace both `FIXME`s.
-
 ```{r, echo=FALSE}
-exercise_ui("mutate_arrange_exercise", "fish_clean |>\n  mutate(weight_kg = FIXME) |>\n  arrange(FIXME)")
+quiz_question_ui("arrange_na_quiz", "One fish in fish_clean has a missing length_mm. After fish_clean |> arrange(desc(length_mm)), where is it?", c(
+  "The last row" = "correct",
+  "The first row" = "wrong_first",
+  "Gone -- it's dropped from the result" = "wrong_dropped",
+  "Nowhere -- the code gives an error" = "wrong_error"
+))
 ```
 
-Stuck, or want to double check your thinking? The tutor chat below is available any time -- before you submit, after a failed attempt, or even after you've already passed.
+### Practice: add a column and sort
+
+Starting from `fish_clean`, add a column `weight_kg` with each fish's weight in kilograms, then sort so the **longest** fish comes first.
+
+```{r, echo=FALSE}
+exercise_ui("mutate_arrange_exercise", "fish_clean |>\n  ")
+```
 
 ```{r, echo=FALSE}
 accordion(
@@ -1735,23 +1827,30 @@ accordion(
 
 ## Module 4: Grouping and summarizing
 
-`group_by()` and `summarize()` are almost always used together: `group_by(df, col)` splits the data into groups by that column, and `summarize(df, stat = expression)` collapses each group down to one summary row.
+`group_by()` splits the rows into groups, and `summarize()` collapses each group to a single row. `summarize()` can compute several things at once, separated by commas -- and `n()` counts the rows in each group:
 
 ```{r group-summarize-demo, echo=TRUE}
 fish_clean |>
   group_by(lake_site) |>
-  summarize(n_fish = n())
+  summarize(n_fish = n(), shortest = min(length_mm, na.rm = TRUE))
 ```
-
-### Practice: average length per species
-
-Below, group `fish_clean` by `species`, then compute each species' mean `length_mm` in a column called `mean_length`. `length_mm` has a missing value, so `mean()` will need `na.rm = TRUE` to skip it rather than returning `NA`. Replace both `FIXME`s.
 
 ```{r, echo=FALSE}
-exercise_ui("group_summarize_exercise", "fish_clean |>\n  group_by(FIXME) |>\n  summarize(mean_length = mean(length_mm, na.rm = FIXME))")
+quiz_question_ui("group_count_quiz", "How many rows does fish_clean |> group_by(species, lake_site) |> summarize(n = n()) return? (Scroll up to the data if you need to.)", c(
+  "3" = "wrong_species_only",
+  "5" = "correct",
+  "6" = "wrong_all_combos",
+  "10" = "wrong_rows"
+))
 ```
 
-Stuck, or want to double check your thinking? The tutor chat below is available any time -- before you submit, after a failed attempt, or even after you've already passed.
+### Practice: summarize by species
+
+Starting from `fish_clean`, find each species' heaviest weight (as `max_weight`) and number of fish (as `n_fish`). Every species should end up with a real number -- check your output.
+
+```{r, echo=FALSE}
+exercise_ui("group_summarize_exercise", "fish_clean |>\n  ")
+```
 
 ```{r, echo=FALSE}
 accordion(
@@ -1771,8 +1870,6 @@ accordion(
 
 ## Module 4: Handling missing data
 
-You just saw one way to handle `NA`s -- `na.rm = TRUE` tells a function like `mean()` to skip them. Another common approach is to remove the incomplete rows entirely first, using `filter()` with `is.na()`:
-
 ```{r, echo=FALSE}
 quiz_question_ui("na_quiz", "What does mean(c(10, NA, 30)) return, without any extra arguments?", c(
   "20" = "wrong_20",
@@ -1781,21 +1878,30 @@ quiz_question_ui("na_quiz", "What does mean(c(10, NA, 30)) return, without any e
 ))
 ```
 
-`is.na(x)` returns `TRUE` wherever `x` is missing -- so `!is.na(x)` (the `!` means "not") keeps only the rows that **aren't** missing:
+There are two ways to deal with `NA`: tell the function to skip it (`na.rm = TRUE`), or remove the incomplete rows first. `is.na(x)` is `TRUE` wherever `x` is missing and `!` means "not", so `filter(!is.na(x))` keeps only complete rows:
 
 ```{r na-demo, echo=TRUE}
 fish_clean |> filter(!is.na(weight_g))
 ```
 
-### Practice: average weight, missing values removed
-
-Below, filter `fish_clean` down to only the rows where `weight_g` is **not** missing, then compute the mean `weight_g` of the remaining rows in a column called `avg_weight`. Replace `FIXME`.
+Missing values can also sneak *into* results. Look closely at the data before answering this one:
 
 ```{r, echo=FALSE}
-exercise_ui("na_handling_exercise", "fish_clean |>\n  filter(FIXME) |>\n  summarize(avg_weight = mean(weight_g))")
+quiz_question_ui("bracket_na_quiz", "How many rows does fish_clean[fish_clean$length_mm > 200, ] return?", c(
+  "4" = "wrong_4",
+  "5" = "correct",
+  "9" = "wrong_9",
+  "An error" = "wrong_error"
+))
 ```
 
-Stuck, or want to double check your thinking? The tutor chat below is available any time -- before you submit, after a failed attempt, or even after you've already passed.
+### Practice: fix the missing averages
+
+This code should give the average weight of each species, but two of the three come out `NA`. Fix it by **removing the incomplete rows with `filter()`** before averaging (not with `na.rm`).
+
+```{r, echo=FALSE}
+exercise_ui("na_handling_exercise", "fish_clean |>\n  group_by(species) |>\n  summarize(avg_weight = mean(weight_g))")
+```
 
 ```{r, echo=FALSE}
 accordion(
@@ -1815,17 +1921,13 @@ accordion(
 
 ## Module 4: Putting it together
 
-You've now covered inspecting a data frame, renaming columns, indexing, the pipe, and dplyr's core verbs -- `filter()`, `select()`, `mutate()`, `arrange()`, `group_by()`, and `summarize()` -- plus handling missing values. This last exercise combines several of those into one realistic multi-step pipeline.
+### Practice: debug a pipeline
 
-### Practice: full cleaning pipeline
-
-Below, starting from `fish_clean`: filter out any row with a missing `length_mm`, group the rest by `lake_site`, compute each lake's mean `length_mm` in a column called `avg_length`, and sort the result so the lake with the **higher** average length comes first. Replace all three `FIXME`s.
+Someone wrote this to answer: *"Ignoring fish with no recorded length, what's the average length in each lake, highest first?"* It runs, but the answer is wrong. There are three bugs -- find and fix all of them. Check each line against the question.
 
 ```{r, echo=FALSE}
-exercise_ui("module4_cumulative_exercise", "fish_clean |>\n  filter(FIXME) |>\n  group_by(FIXME) |>\n  summarize(avg_length = mean(length_mm)) |>\n  arrange(FIXME)")
+exercise_ui("module4_cumulative_exercise", "fish_clean |>\n  filter(is.na(length_mm)) |>\n  group_by(species) |>\n  summarize(avg_length = mean(length_mm)) |>\n  arrange(avg_length)")
 ```
-
-Stuck, or want to double check your thinking? The tutor chat below is available any time -- before you submit, after a failed attempt, or even after you've already passed.
 
 ```{r, echo=FALSE}
 accordion(
@@ -1845,13 +1947,11 @@ accordion(
 
 ## Module 4: Wrapping up
 
-You've now taken a genuinely messy data frame and turned it into something you can actually answer questions from -- and real data almost always needs this kind of cleanup before anything else useful can happen to it.
-
 **If you remember only a few things from this module:**
 
-- The pipe (`|>`) reads as "then" -- each step takes the previous step's result and does one more thing to it.
-- `group_by()` + `summarize()` is how you go from many rows to one answer per group -- one of the most common things you'll do with real data.
-- Missing values (`NA`) don't just disappear -- functions like `mean()` need `na.rm = TRUE` or they'll silently return `NA` themselves.
+- The pipe (`|>`) reads as "then" -- and when a pipeline gives a wrong answer, check it one step at a time against what each step is supposed to do.
+- `group_by()` + `summarize()` takes you from many rows to one answer per group -- one of the most common things you'll do with real data.
+- Missing values (`NA`) don't disappear on their own: `mean()` returns `NA` unless told otherwise, `arrange()` sends them to the bottom, and square-bracket subsetting can quietly add rows of them.
 
 ### Up next
 
@@ -1861,44 +1961,53 @@ Module 5 moves into actually *doing something* with cleaned-up data: basic plots
 library(ggplot2)
 library(rlang)
 
-# Module 5 reuses the same fish_clean data frame Module 4 already built and
-# placed in globalenv() above -- no need to recreate it here now that both
-# modules live in the same document/session (each module used to be its own
-# separate deployment, which is why the original per-module version of this
-# file rebuilt fish_clean from scratch instead of reusing Module 4's).
+# Module 5 reuses the fish_clean data frame Module 4 built and placed in
+# globalenv() above.
 
-# Grading logic for each exercise. A ggplot object's mapping (aes()) is
-# stored as quosures -- rlang::as_label() turns e.g. aes(x = length_mm)'s
-# stored mapping back into the plain string "length_mm" for comparison.
-# log_attempt_and_maybe_open_chat() and wire_tutor_chat() themselves are
-# shared across modules -- see R/tutor_utils.R.
-
+# A ggplot object's mapping (aes()) is stored as quosures --
+# rlang::as_label() turns e.g. aes(x = length_mm)'s stored mapping back into
+# the plain string "length_mm" for comparison. A mapping can live on the
+# ggplot() call or on a layer (geom_point(aes(...))), so plot_mapping_label()
+# checks both.
 mapping_label <- function(mapping, aesthetic) {
   if (is.null(mapping[[aesthetic]])) return(NA_character_)
   rlang::as_label(mapping[[aesthetic]])
 }
 
+plot_mapping_label <- function(plot, aesthetic) {
+  label <- mapping_label(plot$mapping, aesthetic)
+  if (!is.na(label)) return(label)
+  for (layer in plot$layers) {
+    label <- mapping_label(layer$mapping, aesthetic)
+    if (!is.na(label)) return(label)
+  }
+  NA_character_
+}
+
 evaluate_scatter_exercise <- function(user_code, result, stage) {
-  uses_geom_point <- grepl("geom_point\\s*\\(", user_code)
   is_ggplot <- inherits(result, "ggplot")
   has_point_layer <- is_ggplot && any(vapply(result$layers, function(l) inherits(l$geom, "GeomPoint"), logical(1)))
-  x_ok <- is_ggplot && identical(mapping_label(result$mapping, "x"), "length_mm")
-  y_ok <- is_ggplot && identical(mapping_label(result$mapping, "y"), "weight_g")
+  x_ok <- is_ggplot && identical(plot_mapping_label(result, "x"), "length_mm")
+  y_ok <- is_ggplot && identical(plot_mapping_label(result, "y"), "weight_g")
+  colour_label <- if (is_ggplot) plot_mapping_label(result, "colour") else NA_character_
+  colour_ok <- identical(colour_label, "species")
 
-  passed <- uses_geom_point && is_ggplot && has_point_layer && x_ok && y_ok
+  passed <- is_ggplot && has_point_layer && x_ok && y_ok && colour_ok
 
   feedback_message <- if (passed) {
-    "That's a scatter plot of length vs. weight -- exactly right."
+    "That's it -- one color per species, with a legend ggplot made for you, because color is mapped to a column inside aes()."
+  } else if (identical(stage, "error_check") && grepl("species", user_code, fixed = TRUE)) {
+    "R can't find an object called species. Outside aes(), R looks for a variable by that name; inside aes(), it looks for a column in the data. Where does color = species belong?"
   } else if (identical(stage, "error_check")) {
-    "That code doesn't run as-is -- check that aes()'s arguments and geom_point() are complete, valid R."
-  } else if (!is_ggplot) {
-    "This should produce a ggplot object -- make sure ggplot(fish_clean, aes(...)) is still the start of the expression."
-  } else if (!has_point_layer) {
-    "This needs a geom_point() layer to actually draw the scatter plot."
-  } else if (!x_ok) {
-    "The x-axis isn't mapped to length_mm yet -- check aes()'s x argument."
+    "That code doesn't run as-is -- check that every ( has a matching ) and the layers are joined with +."
+  } else if (!is_ggplot || !has_point_layer) {
+    "Keep the ggplot(...) + geom_point() structure -- you only need to add one thing to it."
+  } else if (!x_ok || !y_ok) {
+    "Keep length_mm on x and weight_g on y -- only the color should change."
+  } else if (identical(colour_label, "\"species\"")) {
+    "Close -- but \"species\" in quotes is just a piece of text, so every point gets the same color. Drop the quotes so it refers to the column."
   } else {
-    "Close -- the y-axis isn't mapped to weight_g yet, check aes()'s y argument."
+    "The points should be colored by species -- map color to the species column inside aes()."
   }
 
   list(passed = passed, message = feedback_message)
@@ -1906,79 +2015,83 @@ evaluate_scatter_exercise <- function(user_code, result, stage) {
 
 evaluate_bar_exercise <- function(user_code, result, stage) {
   uses_group_by <- grepl("group_by\\s*\\(", user_code)
-  uses_geom_col <- grepl("geom_col\\s*\\(", user_code)
   is_ggplot <- inherits(result, "ggplot")
   has_col_layer <- is_ggplot && any(vapply(result$layers, function(l) inherits(l$geom, "GeomCol"), logical(1)))
+  has_count_bar <- is_ggplot && any(vapply(result$layers, function(l) inherits(l$stat, "StatCount"), logical(1)))
   right_groups <- is_ggplot && is.data.frame(result$data) && nrow(result$data) == 3
-  x_ok <- is_ggplot && identical(mapping_label(result$mapping, "x"), "species")
-  y_ok <- is_ggplot && identical(mapping_label(result$mapping, "y"), "mean_weight")
+  x_ok <- is_ggplot && identical(plot_mapping_label(result, "x"), "species")
+  y_ok <- is_ggplot && identical(plot_mapping_label(result, "y"), "mean_weight")
 
-  passed <- uses_group_by && uses_geom_col && is_ggplot && has_col_layer && right_groups && x_ok && y_ok
+  passed <- uses_group_by && is_ggplot && has_col_layer && right_groups && x_ok && y_ok
 
   feedback_message <- if (passed) {
-    "One bar per species, showing each one's mean weight -- exactly right."
+    "Fixed -- now each bar's height is that species' mean weight instead of a count of rows."
+  } else if (identical(stage, "error_check") && grepl("geom_bar", user_code, fixed = TRUE)) {
+    "geom_bar() won't take a y value -- it always counts rows itself (that's what stat_count() in the error means). Which geom draws bars at heights you already have?"
   } else if (identical(stage, "error_check")) {
     "That code doesn't run as-is -- work through each step of the pipeline, same as Module 4."
   } else if (!uses_group_by || !right_groups) {
-    "Check the group_by() step -- there are 3 species in this data, and something else is producing a different number of bars."
-  } else if (!uses_geom_col || !has_col_layer) {
-    "This needs a geom_col() layer to draw the bars."
+    "Keep the group_by() and summarize() steps -- there should be one bar per species (3 bars)."
+  } else if (has_count_bar && y_ok) {
+    "Half right -- the y mapping is good, but geom_bar() won't accept a y value (that's the stat_count() error above the plot). It always counts rows itself. Which geom draws bars at heights you already have?"
+  } else if (has_count_bar || !has_col_layer) {
+    "Every bar is still height 1. geom_bar() counts how many rows each species has -- and after summarize() there's exactly one. You want the bar height to come from mean_weight."
   } else if (!x_ok) {
-    "The x-axis isn't mapped to species yet -- check aes()'s x argument."
+    "Keep species on the x-axis."
   } else {
-    "Close -- the y-axis isn't mapped to mean_weight yet, check aes()'s y argument."
+    "Close -- the bar heights should come from mean_weight. Check aes()."
   }
 
   list(passed = passed, message = feedback_message)
 }
 
 evaluate_histogram_exercise <- function(user_code, result, stage) {
-  uses_geom_histogram <- grepl("geom_histogram\\s*\\(", user_code)
   is_ggplot <- inherits(result, "ggplot")
-  has_hist_layer <- is_ggplot && any(vapply(result$layers, function(l) inherits(l$geom, "GeomBar") || inherits(l$geom, "GeomHistogram") || "GeomBar" %in% class(l$geom), logical(1)))
-  x_ok <- is_ggplot && identical(mapping_label(result$mapping, "x"), "length_mm")
+  hist_layers <- if (is_ggplot) Filter(function(l) inherits(l$stat, "StatBin"), result$layers) else list()
+  has_hist_layer <- length(hist_layers) > 0
+  x_ok <- is_ggplot && identical(plot_mapping_label(result, "x"), "length_mm")
+  bins_ok <- has_hist_layer && isTRUE(hist_layers[[1]]$stat_params$bins == 8)
 
-  passed <- uses_geom_histogram && is_ggplot && has_hist_layer && x_ok
+  passed <- is_ggplot && has_hist_layer && x_ok && bins_ok
 
   feedback_message <- if (passed) {
-    "That's a histogram of length_mm -- exactly right."
+    "That's a histogram of length_mm with 8 bins. (ggplot warns that 1 row was removed -- that's the fish with a missing length.)"
   } else if (identical(stage, "error_check")) {
-    "That code doesn't run as-is -- check that aes() and geom_histogram() are complete, valid R."
+    "That code doesn't run as-is -- check that aes() has x = a column name and that the parentheses all match."
   } else if (!is_ggplot) {
-    "This should produce a ggplot object -- make sure ggplot(fish_clean, aes(...)) is still the start of the expression."
+    "This should produce a ggplot object -- keep ggplot(fish_clean, aes(...)) at the start."
   } else if (!has_hist_layer) {
-    "This needs a geom_histogram() layer to actually draw the histogram."
+    "This needs a geom_histogram() layer to draw the histogram."
+  } else if (!x_ok) {
+    "The x-axis should be length_mm -- check aes()."
   } else {
-    "Close -- the x-axis isn't mapped to length_mm yet, check aes()'s x argument."
+    "Almost -- the histogram should use exactly 8 bins. Look at how the demo sets the number of bins."
   }
 
   list(passed = passed, message = feedback_message)
 }
 
 evaluate_cumulative_plot_exercise <- function(user_code, result, stage) {
-  uses_filter <- grepl("filter\\s*\\(", user_code)
-  uses_geom_point <- grepl("geom_point\\s*\\(", user_code)
-  uses_labs <- grepl("labs\\s*\\(", user_code)
   is_ggplot <- inherits(result, "ggplot")
   has_point_layer <- is_ggplot && any(vapply(result$layers, function(l) inherits(l$geom, "GeomPoint"), logical(1)))
-  right_data <- is_ggplot && is.data.frame(result$data) && nrow(result$data) == 4 &&
-    "species" %in% names(result$data) && all(result$data$species == "Bluegill")
+  n_rows <- if (is_ggplot && is.data.frame(result$data)) nrow(result$data) else NA_integer_
+  right_data <- is_ggplot && isTRUE(n_rows == 4) && all(result$data$species == "Bluegill")
   has_title <- is_ggplot && is.character(result$labels$title) && nzchar(trimws(result$labels$title))
 
-  passed <- uses_filter && uses_geom_point && uses_labs && is_ggplot && has_point_layer && right_data && has_title
+  passed <- is_ggplot && has_point_layer && right_data && has_title
 
   feedback_message <- if (passed) {
-    "That's the full pipeline -- filtered to just Bluegill, plotted, and titled."
+    "Both bugs fixed -- 4 Bluegill, plotted and titled. The second bug was the dangerous one: an empty plot runs without any error."
   } else if (identical(stage, "error_check")) {
-    "That code doesn't run as-is -- work through it one step at a time, same as you've done in earlier modules."
-  } else if (!uses_filter || !right_data) {
-    "Check the filter() step -- this plot should only include the 4 Bluegill rows."
-  } else if (!uses_geom_point || !has_point_layer) {
-    "This still needs a geom_point() layer to draw the scatter plot."
-  } else if (!uses_labs || !has_title) {
-    "The plot looks right, but it still needs a title -- add labs(title = \"...\") with any title you like."
+    "Read the error closely -- ggplot is making a specific guess about what's wrong. ggplot layers are joined with + , not the pipe."
+  } else if (!is_ggplot || !has_point_layer) {
+    "Keep the ggplot(...) + geom_point() + labs(...) structure."
+  } else if (isTRUE(n_rows == 0)) {
+    "It runs now -- but look at the plot: there are no points. filter() kept zero rows. Compare the species name in the code to how it's written in the data."
+  } else if (!right_data) {
+    "The plot should show only the 4 Bluegill -- check the filter() step."
   } else {
-    "Close -- double check each step of the pipeline."
+    "Keep the title -- the plot should still have labs(title = ...)."
   }
 
   list(passed = passed, message = feedback_message)
@@ -1995,31 +2108,40 @@ wire_tutor_chat("module5_cumulative", "tutor_chat_m5_4", "tutor_accordion_m5_4",
 
 ```{r, context="server"}
 # --- Quiz question wiring ------------------------------------------------
-quiz_question_server(input, output, session, "ggplot_grammar_quiz", list(
-  correct = list(correct = TRUE, message = "Correct!"),
-  wrong_speed = list(correct = FALSE, message = "aes() doesn't affect how fast the code runs -- it's purely about what's shown and how."),
-  wrong_load = list(correct = FALSE, message = "aes() doesn't load or import anything -- that's a separate step.")
+quiz_question_server(input, output, session, "ggplot_grammar_quiz", module_number = 5, list(
+  correct = list(correct = TRUE, message = "Correct! Inside aes(), \"blue\" is treated as data -- a single category called \"blue\" -- so ggplot colors it with its first default color and adds a legend. For actually-blue points: geom_point(color = \"blue\"), outside aes()."),
+  wrong_blue = list(correct = FALSE, message = "That's what you'd get with geom_point(color = \"blue\") -- outside aes(). Inside aes(), \"blue\" is treated as a data value, not a color."),
+  wrong_error = list(correct = FALSE, message = "No error -- which is what makes this one sneaky. It runs and draws something you didn't mean."),
+  wrong_none = list(correct = FALSE, message = "The points are still drawn -- the question is what color, and why there's a legend.")
 ))
 
-quiz_question_server(input, output, session, "markdown_quiz", list(
-  correct = list(correct = TRUE, message = "Correct!"),
-  wrong_speed = list(correct = FALSE, message = "R Markdown doesn't make code run faster -- it's about presentation, not performance."),
-  wrong_password = list(correct = FALSE, message = "R Markdown files aren't for storing credentials -- that's what .Renviron (and never committing it to git) is for.")
+quiz_question_server(input, output, session, "ggplot_warning_quiz", module_number = 5, list(
+  correct = list(correct = TRUE, message = "Correct! The 2 fish with no recorded weight can't be placed on the x-axis, so ggplot leaves them out and tells you. fish_clean itself is unchanged."),
+  wrong_wrong = list(correct = FALSE, message = "The plot is fine -- the warning just tells you which rows couldn't be drawn. Worth knowing, not a reason to start over."),
+  wrong_bins = list(correct = FALSE, message = "Empty bins don't produce a warning -- they just show up as gaps."),
+  wrong_deleted = list(correct = FALSE, message = "ggplot never changes your data -- it only left 2 rows out of this one plot.")
 ))
 
-quiz_question_server(input, output, session, "scripts_quiz", list(
-  correct = list(correct = TRUE, message = "Correct!"),
-  wrong_required = list(correct = FALSE, message = "R scripts run from anywhere -- the issue with the Desktop is organization, not a hard requirement."),
-  wrong_speed = list(correct = FALSE, message = "Where a script is saved doesn't affect how fast it runs.")
+quiz_question_server(input, output, session, "markdown_quiz", module_number = 5, list(
+  correct = list(correct = TRUE, message = "Correct! Knit runs all the code and weaves its results into the text, producing the finished report (HTML, Word, or PDF)."),
+  wrong_console = list(correct = FALSE, message = "That would run the code, but you'd lose the report around it -- the text, headings, and figures together."),
+  wrong_rename = list(correct = FALSE, message = "Renaming doesn't convert anything -- and the text parts would become errors in a plain script.")
 ))
 
-quiz_question_server(input, output, session, "naming_files_quiz", list(
+quiz_question_server(input, output, session, "scripts_quiz", module_number = 5, list(
+  correct = list(correct = TRUE, message = "Correct! That path only exists on Maria's computer. Point it at your own folder -- or better, open an RStudio Project and delete the setwd() line, so the script works anywhere."),
+  wrong_admin = list(correct = FALSE, message = "Permissions aren't the issue -- the folder simply doesn't exist on your computer."),
+  wrong_package = list(correct = FALSE, message = "setwd() is built into R -- the problem is the path it's given."),
+  wrong_slashes = list(correct = FALSE, message = "Forward slashes are fine in R, even on Windows. The problem is whose computer that folder is on.")
+))
+
+quiz_question_server(input, output, session, "naming_files_quiz", module_number = 5, list(
   correct = list(correct = TRUE, message = "Correct!"),
-  wrong_final = list(correct = FALSE, message = "Names like that (with \"final\", spaces, and version numbers in parentheses) are exactly what to avoid -- they don't say what the file actually does, and stack up confusingly over time."),
+  wrong_final = list(correct = FALSE, message = "Names like that (with \"final\", spaces, and version numbers in parentheses) are exactly what to avoid -- they don't say what the file does, and stack up confusingly over time."),
   wrong_vague = list(correct = FALSE, message = "A name like that doesn't describe what the file does at all -- six months from now, you (or a teammate) would have no way to tell.")
 ))
 
-quiz_question_server(input, output, session, "version_control_quiz", list(
+quiz_question_server(input, output, session, "version_control_quiz", module_number = 5, list(
   correct = list(correct = TRUE, message = "Correct!"),
   wrong_autofix = list(correct = FALSE, message = "Git doesn't fix bugs for you -- it just keeps a history of every change, bugs included."),
   wrong_standalone = list(correct = FALSE, message = "Git is unrelated to whether RStudio is installed -- it's about tracking change history, not packaging software.")
@@ -2029,32 +2151,33 @@ quiz_question_server(input, output, session, "version_control_quiz", list(
 ```{r, context="server"}
 # --- Exercise wiring -------------------------------------------------------
 # has_plot_output = TRUE here so a ggplot result is actually rendered, not
-# printed as text.
+# printed as text. Scaffolding fades: modify a working plot, fix a plot
+# that's subtly wrong, write a short one, then debug one with a silent bug.
 
 exercise_server(
   input, output, session, "scatter_exercise", "module5_scatter", "tutor_accordion_m5_1",
-  starting_code = "ggplot(fish_clean, aes(x = FIXME, y = FIXME)) +\n  geom_point()",
+  starting_code = "ggplot(fish_clean, aes(x = length_mm, y = weight_g)) +\n  geom_point()",
   evaluate_fn = function(user_code, result, envir, stage) evaluate_scatter_exercise(user_code, result, stage),
   has_plot_output = TRUE
 )
 
 exercise_server(
   input, output, session, "bar_exercise", "module5_bar", "tutor_accordion_m5_2",
-  starting_code = "fish_clean |>\n  group_by(FIXME) |>\n  summarize(mean_weight = mean(weight_g, na.rm = TRUE)) |>\n  ggplot(aes(x = FIXME, y = FIXME)) +\n  geom_col()",
+  starting_code = "fish_clean |>\n  group_by(species) |>\n  summarize(mean_weight = mean(weight_g, na.rm = TRUE)) |>\n  ggplot(aes(x = species)) +\n  geom_bar()",
   evaluate_fn = function(user_code, result, envir, stage) evaluate_bar_exercise(user_code, result, stage),
   has_plot_output = TRUE
 )
 
 exercise_server(
   input, output, session, "histogram_exercise", "module5_histogram", "tutor_accordion_m5_3",
-  starting_code = "ggplot(fish_clean, aes(x = FIXME)) +\n  geom_histogram(bins = 8)",
+  starting_code = "ggplot(fish_clean, aes(x = )) +\n  geom_histogram()",
   evaluate_fn = function(user_code, result, envir, stage) evaluate_histogram_exercise(user_code, result, stage),
   has_plot_output = TRUE
 )
 
 exercise_server(
   input, output, session, "cumulative_plot_exercise", "module5_cumulative", "tutor_accordion_m5_4",
-  starting_code = "fish_clean |>\n  filter(FIXME) |>\n  ggplot(aes(x = length_mm, y = weight_g)) +\n  geom_point() +\n  labs(title = FIXME)",
+  starting_code = "fish_clean |>\n  filter(species == \"bluegill\") |>\n  ggplot(aes(x = length_mm, y = weight_g)) |>\n  geom_point() +\n  labs(title = \"Bluegill: length vs. weight\")",
   evaluate_fn = function(user_code, result, envir, stage) evaluate_cumulative_plot_exercise(user_code, result, stage),
   has_plot_output = TRUE
 )
@@ -2062,39 +2185,47 @@ exercise_server(
 
 ## Module 5: Welcome back
 
-Module 4 got `fish_clean` -- the same fish survey data you'll use again here -- inspected, cleaned, and summarized. This module is where you actually *do something* with it: turn it into plots with `ggplot2`. Along the way, you'll also pick up a handful of habits (naming files, organizing scripts, recognizing R Markdown, and what version control is for) that matter for real work beyond this course, even though none of them involve writing new code.
+This module turns `fish_clean` into plots with `ggplot2`. You'll mostly **adjust and fix** plotting code rather than write it from a blank page -- which is how plotting code usually gets used, whether it comes from a colleague, an old script, or an AI. The module ends with a few working habits that keep code runnable on someone else's computer.
 
 ## Module 5: Basic plots with ggplot2
 
-Every `ggplot2` plot follows the same basic grammar:
+Every `ggplot2` plot has the same shape:
 
-- **`ggplot(data, aes(...))`** -- start a plot, and tell it which columns to use with `aes()` (short for "aesthetic mapping") -- which column goes on the x-axis, which on the y-axis, and so on
-- **`+ geom_...()`** -- add a "geometry" layer that actually draws something: `geom_point()` for a scatter plot, `geom_col()` for bars, `geom_histogram()` for a distribution
+- **`ggplot(data, aes(...))`** starts the plot. `aes()` ("aesthetics") **maps columns to visual properties**: which column goes on x, which on y, which sets the color.
+- **`+ geom_...()`** adds a layer that draws something: `geom_point()` for points, `geom_col()` for bars, `geom_histogram()` for a distribution.
 
-These pieces are combined with `+`, not the pipe:
+Layers are joined with `+`, not the pipe.
 
 ```{r ggplot-demo, echo=TRUE, fig.height=3}
 ggplot(fish_clean, aes(x = species, y = length_mm)) +
   geom_point()
 ```
 
+**Inside `aes()`** means "take this from a column in the data." **Outside `aes()`** means "use this fixed value for everything": `geom_point(color = "blue")` makes every point blue.
+
+<details>
+<summary><strong>New to plotting code?</strong> How to read a ggplot line.</summary>
+
+Read it left to right as a sentence: "Using `fish_clean`, put `species` on the x-axis and `length_mm` on the y-axis, then draw points." Each `+` adds one more instruction -- another layer, a title, a color scale. You can delete a layer and the rest still works, which makes ggplot code easy to take apart when something looks wrong.
+
+</details>
+
 ```{r, echo=FALSE}
-quiz_question_ui("ggplot_grammar_quiz", "What does aes() tell ggplot to do?", c(
-  "Map data columns to visual properties like x, y, or color" = "correct",
-  "Run the plotting code faster" = "wrong_speed",
-  "Load the ggplot2 package" = "wrong_load"
+quiz_question_ui("ggplot_grammar_quiz", "What does ggplot(fish_clean, aes(x = length_mm, y = weight_g)) + geom_point(aes(color = \"blue\")) draw?", c(
+  "Points in ggplot's default reddish color, with a legend labeled \"blue\"" = "correct",
+  "Blue points, with no legend" = "wrong_blue",
+  "An error" = "wrong_error",
+  "An empty plot with no points" = "wrong_none"
 ))
 ```
 
-### Practice: scatter plot
+### Practice: color by species
 
-Below, create a scatter plot of `fish_clean` with `length_mm` on the x-axis and `weight_g` on the y-axis, replacing both `FIXME`s.
+Change this plot so each point is colored by its `species`.
 
 ```{r, echo=FALSE}
-exercise_ui("scatter_exercise", "ggplot(fish_clean, aes(x = FIXME, y = FIXME)) +\n  geom_point()", has_plot_output = TRUE)
+exercise_ui("scatter_exercise", "ggplot(fish_clean, aes(x = length_mm, y = weight_g)) +\n  geom_point()", has_plot_output = TRUE)
 ```
-
-Stuck, or want to double check your thinking? The tutor chat below is available any time -- before you submit, after a failed attempt, or even after you've already passed.
 
 ```{r, echo=FALSE}
 accordion(
@@ -2114,7 +2245,10 @@ accordion(
 
 ## Module 5: Bar charts from summarized data
 
-A bar chart usually plots *summarized* data, not raw rows -- which is exactly what Module 4's `group_by()` + `summarize()` produce. You can pipe a summary straight into `ggplot()`:
+Bar charts usually show *summarized* data -- exactly what `group_by()` + `summarize()` produce -- and you can pipe a summary straight into `ggplot()`. There are two bar geoms, and mixing them up is a common silent mistake:
+
+- **`geom_col()`** draws each bar at the height of a **y value you already have**.
+- **`geom_bar()`** **counts rows** itself and draws that count -- no y needed.
 
 ```{r bar-demo, echo=TRUE, fig.height=3}
 fish_clean |>
@@ -2124,15 +2258,13 @@ fish_clean |>
   geom_col()
 ```
 
-### Practice: mean weight per species
+### Practice: fix the bar chart
 
-Below, group `fish_clean` by `species`, summarize each group's mean `weight_g` into `mean_weight` (already written for you), then plot the result as a bar chart with `species` on the x-axis and `mean_weight` on the y-axis. Replace all three `FIXME`s.
+This should show each species' **mean weight**. It runs, but every bar has a height of 1. Fix it.
 
 ```{r, echo=FALSE}
-exercise_ui("bar_exercise", "fish_clean |>\n  group_by(FIXME) |>\n  summarize(mean_weight = mean(weight_g, na.rm = TRUE)) |>\n  ggplot(aes(x = FIXME, y = FIXME)) +\n  geom_col()", has_plot_output = TRUE)
+exercise_ui("bar_exercise", "fish_clean |>\n  group_by(species) |>\n  summarize(mean_weight = mean(weight_g, na.rm = TRUE)) |>\n  ggplot(aes(x = species)) +\n  geom_bar()", has_plot_output = TRUE)
 ```
-
-Stuck, or want to double check your thinking? The tutor chat below is available any time -- before you submit, after a failed attempt, or even after you've already passed.
 
 ```{r, echo=FALSE}
 accordion(
@@ -2152,22 +2284,31 @@ accordion(
 
 ## Module 5: Histograms
 
-A histogram shows the *distribution* of a single numeric column -- how its values are spread out -- by grouping values into bins and counting how many fall in each one:
+A histogram shows how one numeric column is **distributed**: it splits the values into bins and counts how many fall in each. `bins` sets how many.
 
 ```{r histogram-demo, echo=TRUE, fig.height=3}
 ggplot(fish_clean, aes(x = weight_g)) +
   geom_histogram(bins = 6)
 ```
 
-### Practice: histogram of length
-
-Below, create a histogram of `fish_clean`'s `length_mm` column, replacing `FIXME`.
+Running that in RStudio also prints: `Removed 2 rows containing non-finite outside the scale range (stat_bin())`.
 
 ```{r, echo=FALSE}
-exercise_ui("histogram_exercise", "ggplot(fish_clean, aes(x = FIXME)) +\n  geom_histogram(bins = 8)", has_plot_output = TRUE)
+quiz_question_ui("ggplot_warning_quiz", "What does that warning mean?", c(
+  "The 2 fish with a missing weight were left out of the plot" = "correct",
+  "The plot is wrong and needs to be redone" = "wrong_wrong",
+  "Two of the bins were empty" = "wrong_bins",
+  "2 rows were deleted from fish_clean" = "wrong_deleted"
+))
 ```
 
-Stuck, or want to double check your thinking? The tutor chat below is available any time -- before you submit, after a failed attempt, or even after you've already passed.
+### Practice: histogram of length
+
+Finish this so it draws a histogram of `length_mm` with **8 bins**.
+
+```{r, echo=FALSE}
+exercise_ui("histogram_exercise", "ggplot(fish_clean, aes(x = )) +\n  geom_histogram()", has_plot_output = TRUE)
+```
 
 ```{r, echo=FALSE}
 accordion(
@@ -2185,69 +2326,15 @@ accordion(
 )
 ```
 
-## Module 5: Markdown awareness
-
-You've been reading formatted text like this the whole course -- headings, bullet points, bold text -- inside what's actually an **R Markdown** (`.Rmd`) document (this tutorial is one). R Markdown combines regular text with R code and that code's output, all in one file that renders into a finished report.
-
-You won't be asked to author R Markdown documents in this course -- just recognize what one is and what it's for, since scripts and reports you're handed later on may well be written as one.
-
-```{r, echo=FALSE}
-quiz_question_ui("markdown_quiz", "What is an R Markdown (.Rmd) file mainly used for?", c(
-  "Combining code, its output, and written text into one formatted document or report" = "correct",
-  "Running R code faster than a normal script" = "wrong_speed",
-  "Storing a database connection's password" = "wrong_password"
-))
-```
-
-## Module 5: Saving and organizing scripts
-
-A plain R script (a `.R` file) is just your code, without any of R Markdown's surrounding text. Where you save one matters more than it might seem: keeping scripts inside your project's folder (not scattered on the Desktop or in Downloads) keeps everything a project needs in one place, so file paths -- like the working directory concepts from Module 1 -- keep working, and nothing gets lost or orphaned.
-
-```{r, echo=FALSE}
-quiz_question_ui("scripts_quiz", "Why is it better to save your R scripts inside your project folder rather than on the Desktop?", c(
-  "Keeps all the files a project needs together, so paths (like working directory) still work and nothing gets lost" = "correct",
-  "R scripts only run correctly if saved on the Desktop" = "wrong_required",
-  "It makes the script run faster" = "wrong_speed"
-))
-```
-
-## Module 5: File naming conventions
-
-A good file name describes what the file actually does, using lowercase words separated by `_` or `-`, with no spaces or special characters -- similar to this course's `snake_case` variable naming from Module 3. Avoid vague names (`asdf.R`) and especially avoid manual "versioning" in the name itself (`final_v2_FINAL.R`) -- that gets confusing fast, and it's exactly the problem real version control (next section) solves properly.
-
-```{r, echo=FALSE}
-quiz_question_ui("naming_files_quiz", "Which of these is the best file name for a script that cleans survey data?", c(
-  "clean_survey_data.R" = "correct",
-  "Final FINAL script (2).R" = "wrong_final",
-  "asdf.R" = "wrong_vague"
-))
-```
-
-## Module 5: Version control awareness
-
-**Version control** (most commonly **Git**, often paired with **GitHub** for hosting) tracks every change made to a project's files over time -- who changed what, when, and why -- so you can see a file's full history and undo a mistake instead of relying on file names like `final_v2.R` to keep track manually. This course doesn't have you use Git hands-on -- just know that it exists and roughly what it's for, since it's standard in real collaborative work.
-
-```{r, echo=FALSE}
-quiz_question_ui("version_control_quiz", "What is the main purpose of a version control system like Git?", c(
-  "Tracking changes to files over time so you can see history and undo mistakes" = "correct",
-  "Automatically fixing bugs in your code" = "wrong_autofix",
-  "Making your R scripts run without RStudio installed" = "wrong_standalone"
-))
-```
-
 ## Module 5: Putting it together
 
-This last exercise combines a data-cleaning step from Module 4 with this module's plotting skills, plus one more small addition: giving a plot a title with `labs(title = "...")`.
+### Practice: debug the plot
 
-### Practice: filtered scatter plot with a title
-
-Below, starting from `fish_clean`: filter down to just the `"Bluegill"` rows, then create a scatter plot of `length_mm` vs. `weight_g`, and give it any title you like using `labs()`. Replace all three `FIXME`s (the third can be any text you want, in quotes).
+An AI assistant wrote this to plot length vs. weight for **Bluegill only**, with a title. There are two bugs: one stops it from running, and one lets it run but plots the wrong thing. Fix both.
 
 ```{r, echo=FALSE}
-exercise_ui("cumulative_plot_exercise", "fish_clean |>\n  filter(FIXME) |>\n  ggplot(aes(x = length_mm, y = weight_g)) +\n  geom_point() +\n  labs(title = FIXME)", has_plot_output = TRUE)
+exercise_ui("cumulative_plot_exercise", "fish_clean |>\n  filter(species == \"bluegill\") |>\n  ggplot(aes(x = length_mm, y = weight_g)) |>\n  geom_point() +\n  labs(title = \"Bluegill: length vs. weight\")", has_plot_output = TRUE)
 ```
-
-Stuck, or want to double check your thinking? The tutor chat below is available any time -- before you submit, after a failed attempt, or even after you've already passed.
 
 ```{r, echo=FALSE}
 accordion(
@@ -2265,26 +2352,67 @@ accordion(
 )
 ```
 
-## Module 5: Wrapping up
+## Module 5: Working habits
 
-That's Modules 1 through 5: from installing R and RStudio, through running and reading code, working with data, cleaning it up with dplyr, and now actually producing plots from it with ggplot2 -- plus the surrounding habits (script organization, file naming, R Markdown and version control awareness) that carry into real work beyond this tutorial.
+None of these involve new code, but each one decides whether a script still works next month, or on someone else's computer.
+
+**R Markdown.** An `.Rmd` file mixes text with R code and its output -- this course is one. Clicking **Knit** in RStudio runs the code and produces the finished report. You won't need to write one here, but you'll be handed them.
+
+```{r, echo=FALSE}
+quiz_question_ui("markdown_quiz", "Someone sends you analysis.Rmd. How do you get the finished report, with the text, code, and results together?", c(
+  "Open it in RStudio and click Knit" = "correct",
+  "Copy the code chunks into the Console" = "wrong_console",
+  "Rename it to analysis.R and click Source" = "wrong_rename"
+))
+```
+
+**Where scripts live, and paths.** Keep a project's scripts and data together in one folder, opened as an RStudio Project, and use relative paths. Watch for scripts copied from someone else that start with `setwd()` pointing at a folder on *someone else's* computer.
+
+```{r, echo=FALSE}
+quiz_question_ui("scripts_quiz", "A script you were sent starts with setwd(\"C:/Users/maria/Desktop/thesis\") and fails on your computer with: cannot change working directory. Why?", c(
+  "That folder exists on Maria's computer, not yours" = "correct",
+  "You need administrator rights to run setwd()" = "wrong_admin",
+  "setwd() needs a package loaded first" = "wrong_package",
+  "Windows paths need backslashes, not forward slashes" = "wrong_slashes"
+))
+```
+
+**File names.** Describe what the file does, in lowercase with `_` or `-` and no spaces: `clean_survey_data.R`, not `final_v2_FINAL.R`.
+
+```{r, echo=FALSE}
+quiz_question_ui("naming_files_quiz", "Which of these is the best file name for a script that cleans survey data?", c(
+  "clean_survey_data.R" = "correct",
+  "Final FINAL script (2).R" = "wrong_final",
+  "asdf.R" = "wrong_vague"
+))
+```
+
+**Version control.** Git (often with GitHub) keeps the full history of every change to a project, so you can see what changed and undo a mistake -- instead of keeping track with file names. You won't use it in this course; just know what it's for.
+
+```{r, echo=FALSE}
+quiz_question_ui("version_control_quiz", "What is the main purpose of a version control system like Git?", c(
+  "Tracking changes to files over time so you can see history and undo mistakes" = "correct",
+  "Automatically fixing bugs in your code" = "wrong_autofix",
+  "Making your R scripts run without RStudio installed" = "wrong_standalone"
+))
+```
+
+## Module 5: Wrapping up
 
 **If you remember only a few things from this module:**
 
-- Every ggplot2 plot follows the same pattern: `ggplot(data, aes(...))` sets up what to plot, `+ geom_...()` says how to draw it.
-- Naming files and organizing scripts sensibly isn't busywork -- it's what makes a project usable by you (or someone else) six months from now.
-- You now have every skill this course originally set out to build: install, run, clean, and visualize. Module 6 turns to a different question -- judging whether output is any good.
+- `ggplot(data, aes(...)) + geom_...()`. Inside `aes()` maps a column; outside sets a fixed value.
+- `geom_col()` draws heights you have; `geom_bar()` counts rows.
+- A plot that runs isn't necessarily right -- an empty or flat plot is a clue, and warnings about removed rows tell you what's missing.
+- Scripts should run on any computer: relative paths and Projects, not someone else's `setwd()`.
 
 ### Up next
 
-Everything so far has been about producing your own output -- a cleaned table, a plot. Module 6 flips that around: it's about making sense of output someone else's model produced, so that when you're handed real results later, you can tell whether they're any good.
+Everything so far has been about producing your own output. Module 6 is about reading output a model produced, and judging whether it's any good.
 
 ```{r setup-module6, context="setup", include=FALSE}
 # Demo data for the linear-vs-curved recognition quizzes -- pure visual aids,
-# no exercise attached, so these don't need globalenv() placement the way
-# exercise-referenced data does (see Module 4's setup chunk note on why
-# THAT data needs it -- these plots render at knit/render time only, never
-# touched by exercise_server()'s eval(parse(...), envir = new.env())).
+# rendered at knit time only, so no globalenv() placement needed.
 set.seed(42)
 demo_linear_x <- 1:30
 demo_linear_y <- 2 * demo_linear_x + rnorm(30, sd = 3)
@@ -2292,11 +2420,9 @@ demo_linear_y <- 2 * demo_linear_x + rnorm(30, sd = 3)
 demo_curved_x <- 1:30
 demo_curved_y <- 0.5 * demo_curved_x^2 + rnorm(30, sd = 20)
 
-# Data for the RMSE practice exercise and the "which model wins" cumulative
-# exercise below. Both are referenced by exercise_server()'s
-# eval(parse(text = user_code), envir = new.env()) -- see Module 4's setup
-# chunk note for why that means these need to be explicitly placed in
-# globalenv(), not just assigned normally here.
+# Data for the RMSE and "which model wins" exercises. Referenced by
+# exercise_server()'s eval(parse(text = user_code), envir = new.env()) -- see
+# Module 4's setup chunk note for why that means globalenv().
 actual_weights <- c(45, 62, 58, 71, 39)
 predicted_weights <- c(50, 55, 60, 68, 42)
 
@@ -2308,30 +2434,28 @@ for (nm in c("actual_weights", "predicted_weights", "actual_values", "predicted_
   assign(nm, get(nm), envir = globalenv())
 }
 
-# Grading logic for this module's exercises. log_attempt_and_maybe_open_chat()
-# and wire_tutor_chat() themselves are shared across modules -- see R/tutor_utils.R.
-
 evaluate_lm_slope_exercise <- function(user_code, result, envir, stage) {
   correct_model <- lm(weight_g ~ length_mm, data = fish_clean)
   correct_slope <- unname(coef(correct_model)["length_mm"])
   uses_lm <- grepl("lm\\s*\\(", user_code)
   uses_coef <- grepl("coef\\s*\\(", user_code)
-  correct_result <- is.numeric(result) && length(result) == 1 && isTRUE(all.equal(as.numeric(result), correct_slope, tolerance = 0.001))
+  is_single <- is.numeric(result) && length(result) == 1
+  correct_result <- is_single && isTRUE(all.equal(as.numeric(result), correct_slope, tolerance = 0.001))
   passed <- uses_lm && uses_coef && correct_result
 
   feedback_message <- if (passed) {
     paste0(
       "Right -- the slope is about ", round(correct_slope, 3),
-      ": each extra mm of length is associated with about ", round(correct_slope, 2), " more grams of weight."
+      ": each extra mm of length goes with about ", round(correct_slope, 2), " more grams of weight."
     )
   } else if (identical(stage, "error_check")) {
-    "That code doesn't run as-is -- check that both FIXMEs are replaced with real column names."
-  } else if (!uses_lm) {
-    "This needs an actual lm() call -- check the first FIXME is weight_g (what you're predicting) and the second is length_mm (what you're predicting it from)."
-  } else if (!uses_coef) {
-    "Once the model is fit, use coef(model) to pull out its coefficients, then [\"length_mm\"] to get just the slope."
+    "That code doesn't run as-is -- check the formula inside lm() is outcome ~ predictor, with real column names."
+  } else if (!uses_lm || !uses_coef) {
+    "Keep both steps: fit the model with lm(), then pull the slope out with coef()."
+  } else if (is_single && is.na(result)) {
+    "NA means the model has no length_mm coefficient at all -- so length_mm isn't being used as a predictor. In lm(), which side of ~ is the thing you're predicting?"
   } else {
-    "The model runs, but that's not quite the slope for length_mm -- double check which variable is the outcome (before ~) and which is the predictor (after ~)."
+    "The model runs, but that isn't the slope for length_mm yet -- the question is how weight depends on length."
   }
 
   list(passed = passed, message = feedback_message)
@@ -2342,19 +2466,22 @@ evaluate_rmse_exercise <- function(user_code, result, envir, stage) {
   correct_rmse <- sqrt(mean((actual_weights - predicted_weights)^2))
   is_numeric_result <- is.numeric(result) && length(result) == 1
   result_ok <- is_numeric_result && isTRUE(all.equal(as.numeric(result), correct_rmse, tolerance = 0.01))
+  still_zero <- is_numeric_result && isTRUE(all.equal(as.numeric(result), 0))
 
   passed <- uses_given_vectors && result_ok
 
   feedback_message <- if (passed) {
-    paste0("That's right -- an RMSE of about ", round(correct_rmse, 2), " grams.")
+    paste0("That's right -- an RMSE of about ", round(correct_rmse, 2), " grams. The bug was one misplaced parenthesis.")
   } else if (identical(stage, "error_check")) {
-    "That code doesn't run as-is -- check that differences^FIXME is valid R (FIXME needs to be replaced with a number)."
+    "That code doesn't run as-is -- check that every ( has a matching )."
   } else if (!uses_given_vectors) {
-    "This should be computed from actual_weights and predicted_weights directly, not typed-in numbers."
+    "Compute it from actual_weights and predicted_weights, not typed-in numbers."
+  } else if (still_zero) {
+    "Still 0 -- a perfect model, which the data clearly isn't. Trace it: is each difference squared before averaging, or is the average taken first? (The misses above and below cancel out.)"
   } else if (!is_numeric_result) {
-    "This should end up as a single number -- check that sqrt(mean(...)) is still the outermost part of the expression."
+    "This should end up as a single number."
   } else {
-    "Close, but that's not quite the RMSE -- check what power the differences should be raised to before averaging."
+    "Not the RMSE yet -- square each difference, then average, then take the square root."
   }
 
   list(passed = passed, message = feedback_message)
@@ -2381,15 +2508,15 @@ evaluate_module6_cumulative_exercise <- function(user_code, result, envir, stage
       " and Model B's is about ", round(correct_rmse_b, 1), ", so Model B wins."
     )
   } else if (identical(stage, "error_check")) {
-    "That code doesn't run as-is -- work through it one line at a time, same as earlier modules' cumulative exercises."
+    "That code doesn't run as-is -- work through it one line at a time."
   } else if (!has_rmse_a || !rmse_a_ok) {
-    "rmse_a doesn't look right yet -- check that it's computed the same way as the practice exercise above, using predicted_model_a."
+    "Keep the rmse_a line as given -- it's already correct."
   } else if (!has_rmse_b || !rmse_b_ok) {
-    "rmse_b doesn't look right yet -- check the power the differences are raised to before averaging."
+    "rmse_b isn't right yet -- compute it the same way as rmse_a, but with predicted_model_b."
   } else if (!has_better_model) {
-    "better_model doesn't exist yet -- assign it \"A\" or \"B\", whichever model actually has the lower RMSE."
+    "better_model doesn't exist yet -- assign it \"A\" or \"B\"."
   } else {
-    "rmse_a and rmse_b both look right, but better_model isn't picking the one with the lower RMSE -- double check which of the two is actually smaller."
+    "Both RMSEs look right, but better_model isn't the one with the lower RMSE -- for RMSE, lower is better."
   }
 
   list(passed = passed, message = feedback_message)
@@ -2405,38 +2532,47 @@ wire_tutor_chat("module6_cumulative", "tutor_chat_m6_3", "tutor_accordion_m6_3",
 
 ```{r, context="server"}
 # --- Quiz question wiring ------------------------------------------------
-quiz_question_server(input, output, session, "lm_output_quiz", list(
+quiz_question_server(input, output, session, "linear_shape_quiz", module_number = 6, list(
+  correct = list(correct = TRUE, message = "Right -- y goes up at a roughly constant rate the whole way, which is what a straight line looks like."),
+  wrong_curve = list(correct = FALSE, message = "Look again -- the rate y increases by stays about the same across the whole range of x, which is the hallmark of a straight line.")
+))
+
+quiz_question_server(input, output, session, "curved_shape_quiz", module_number = 6, list(
+  correct = list(correct = TRUE, message = "Right -- it rises more and more steeply as x increases. That bending is what makes it a curve."),
+  wrong_line = list(correct = FALSE, message = "Look again -- the rate keeps getting steeper. A straight line would rise at the same rate the whole way across.")
+))
+
+quiz_question_server(input, output, session, "lm_formula_quiz", module_number = 6, list(
+  correct = list(correct = TRUE, message = "Correct! The left side of ~ is what the model predicts; everything on the right is used to predict it."),
+  wrong_length = list(correct = FALSE, message = "length_mm is on the right of ~, so it's a predictor -- an input the model uses."),
+  wrong_right = list(correct = FALSE, message = "Those are both on the right of ~ -- they're the predictors, not what's being predicted."),
+  wrong_all = list(correct = FALSE, message = "Only the column on the left of ~ is predicted. (A . on the right would mean \"use every other column as a predictor\" -- but there's no . here.)")
+))
+
+quiz_question_server(input, output, session, "lm_output_quiz", module_number = 6, list(
   correct = list(correct = TRUE, message = "Correct -- that Estimate is the slope: how much weight_g changes for each 1 mm increase in length_mm."),
   wrong_intercept = list(correct = FALSE, message = "The (Intercept) Estimate is where the line crosses when length_mm is 0 -- not how much weight_g changes per mm."),
-  wrong_r2 = list(correct = FALSE, message = "Multiple R-squared tells you how much variation the model explains overall -- it doesn't say how much weight_g changes per mm of length.")
+  wrong_r2 = list(correct = FALSE, message = "Multiple R-squared tells you how much variation the model explains overall -- not how much weight_g changes per mm.")
 ))
 
-quiz_question_server(input, output, session, "linear_shape_quiz", list(
-  correct = list(correct = TRUE, message = "Right -- as x increases, y goes up at a roughly constant rate the whole way, which is what a straight line looks like."),
-  wrong_curve = list(correct = FALSE, message = "Look again -- the rate y increases by stays about the same across the whole range of x, which is the hallmark of a straight line, not a curve.")
+quiz_question_server(input, output, session, "r_squared_quiz", module_number = 6, list(
+  correct = list(correct = TRUE, message = "Correct. R-squared can be high even when a straight line is the wrong shape -- the line catches the overall trend but misses systematically. Always look at the plot too."),
+  wrong_great = list(correct = FALSE, message = "A high R-squared doesn't mean the shape is right. A line through a curve misses in a pattern -- too high in the middle, too low at the ends -- even with R-squared over 0.9."),
+  wrong_data = list(correct = FALSE, message = "Nothing about R-squared over 0.9 means the data are wrong -- the question is whether a straight line is the right shape."),
+  wrong_useless = list(correct = FALSE, message = "It's not useless -- it captures the overall trend. But it's the wrong shape, so it'll miss in a predictable pattern.")
 ))
 
-quiz_question_server(input, output, session, "curved_shape_quiz", list(
-  correct = list(correct = TRUE, message = "Right -- notice how it rises more and more steeply as x increases, rather than at a constant rate. That bending is what makes it a curve."),
-  wrong_line = list(correct = FALSE, message = "Look again -- the rate y increases by is not constant here, it keeps getting steeper. A straight line would rise at the same rate the whole way across.")
+quiz_question_server(input, output, session, "train_test_quiz", module_number = 6, list(
+  correct = list(correct = TRUE, message = "Correct! Model B does about as well on new fish as on the ones it learned from. Model A memorized its training fish -- its 5 g looks great but means little, since new data is what you actually care about."),
+  wrong_a = list(correct = FALSE, message = "A's 5 g is on fish it has already seen. On new fish it's off by 60 g -- far worse than B. That gap is the classic sign a model memorized its training data."),
+  wrong_either = list(correct = FALSE, message = "They behave very differently on new fish: 60 g vs. 28 g. That's the number that matters for predicting new fish."),
+  wrong_r2 = list(correct = FALSE, message = "RMSE on new data already answers this -- both are in grams, predicting the same thing.")
 ))
 
-quiz_question_server(input, output, session, "r_squared_quiz", list(
-  correct = list(correct = TRUE, message = "Correct -- 0.85 is closer to 1, meaning that model accounts for more of the variation in the outcome."),
-  wrong_low = list(correct = FALSE, message = "That's backwards -- a higher R-squared (closer to 1) means more of the variation is explained, and 0.20 is the lower of the two."),
-  wrong_same = list(correct = FALSE, message = "They're quite different -- 0.85 vs. 0.20 is a big gap in how much variation each model accounts for.")
-))
-
-quiz_question_server(input, output, session, "rmse_compare_quiz", list(
-  correct = list(correct = TRUE, message = "Correct -- lower RMSE means smaller typical errors, so Model A's predictions are closer to the truth on average."),
-  wrong_b = list(correct = FALSE, message = "That's backwards -- lower RMSE is better, and 12 is lower than 40."),
-  wrong_r2 = list(correct = FALSE, message = "RMSE alone is enough to compare two models predicting the same thing in the same units -- no R-squared needed.")
-))
-
-quiz_question_server(input, output, session, "rmse_units_quiz", list(
-  correct = list(correct = TRUE, message = "Correct -- RMSE is expressed in the same units as the outcome, so an RMSE in kilograms and one in grams aren't on the same scale."),
-  wrong_unitless = list(correct = FALSE, message = "RMSE is NOT unitless -- it carries the same units as whatever you're predicting, which is exactly why comparing across different units is misleading."),
-  wrong_grams = list(correct = FALSE, message = "RMSE works the same way regardless of which units you're predicting in -- the issue is comparing two DIFFERENT units to each other, not grams specifically.")
+quiz_question_server(input, output, session, "rmse_units_quiz", module_number = 6, list(
+  correct = list(correct = TRUE, message = "Correct -- RMSE is in the same units as the outcome, so an RMSE in kilograms and one in grams aren't on the same scale."),
+  wrong_unitless = list(correct = FALSE, message = "RMSE is NOT unitless -- it carries the units of whatever you're predicting, which is exactly why comparing across units is misleading."),
+  wrong_grams = list(correct = FALSE, message = "RMSE works the same way in any units -- the issue is comparing two DIFFERENT units to each other.")
 ))
 ```
 
@@ -2444,32 +2580,37 @@ quiz_question_server(input, output, session, "rmse_units_quiz", list(
 # --- Exercise wiring -------------------------------------------------------
 exercise_server(
   input, output, session, "lm_slope_exercise", "module6_linear_regression", "tutor_accordion_m6_1",
-  starting_code = "model <- lm(FIXME ~ FIXME, data = fish_clean)\ncoef(model)[\"length_mm\"]",
+  starting_code = "model <- lm(length_mm ~ weight_g, data = fish_clean)\ncoef(model)[\"length_mm\"]",
   evaluate_fn = evaluate_lm_slope_exercise
 )
 
 exercise_server(
   input, output, session, "rmse_exercise", "module6_rmse", "tutor_accordion_m6_2",
-  starting_code = "differences <- actual_weights - predicted_weights\nsqrt(mean(differences^FIXME))",
+  starting_code = "sqrt(mean(actual_weights - predicted_weights)^2)",
   evaluate_fn = evaluate_rmse_exercise
 )
 
 exercise_server(
   input, output, session, "module6_cumulative_exercise", "module6_cumulative", "tutor_accordion_m6_3",
-  starting_code = "rmse_a <- sqrt(mean((actual_values - predicted_model_a)^2))\nrmse_b <- sqrt(mean((actual_values - predicted_model_b)^FIXME))\nbetter_model <- FIXME",
+  starting_code = "rmse_a <- sqrt(mean((actual_values - predicted_model_a)^2))\n",
   evaluate_fn = evaluate_module6_cumulative_exercise
 )
 ```
 
 ## Module 6: Welcome back
 
-Modules 1 through 5 got you comfortable installing R, running and reading code, and cleaning up and plotting real data. From here on, the work looks a little different: instead of writing the code that produces a result, you'll often be handed a script someone else wrote -- an instructor, a teammate, an AI assistant -- and asked to run it and make sense of what it produced.
+From here on, you'll often be handed a script someone else wrote -- an instructor, a teammate, an AI -- that fits a model and prints results. This module is about **reading** that output: what a model is predicting, whether it's a good fit, and whether one model really beats another. You won't build anything beyond `lm()` itself.
 
-This module is about that second skill: given some model's output, can you tell whether it's a good fit, and whether one model is better than another? None of this asks you to build a model yourself -- just to read the numbers and plots a model produces, the same way you've been reading error messages and grader feedback all course.
+<details>
+<summary><strong>New to models?</strong> What "a model" means here.</summary>
+
+A model is a rule for **predicting one thing from others** -- for example, predicting a fish's weight from its length. A straight-line model says "weight goes up by about the same amount for every extra millimeter." The model learns that amount from data, then uses it to make predictions. Everything in this module is about checking how good those predictions are.
+
+</details>
 
 ## Module 6: Is it a line, or a curve?
 
-The most basic question you can ask about a relationship between two numbers -- like a fish's length and its weight -- is whether it looks like a straight line or a curve. This matters because a model that assumes a straight line (like the ones you'll see below) will systematically miss if the real relationship curves.
+Before trusting a straight-line model, look at the data's shape: a model that assumes a straight line will miss in a predictable pattern if the real relationship curves.
 
 ```{r linear-demo, echo=TRUE, fig.height=3}
 plot(demo_linear_x, demo_linear_y, main = "Relationship A", xlab = "x", ylab = "y", pch = 19, col = "steelblue")
@@ -2495,18 +2636,29 @@ quiz_question_ui("curved_shape_quiz", "Look at \"Relationship B\" above. Does it
 
 ## Module 6: Linear regression
 
-A **linear regression** is the actual straight-line model behind "is it a line, or a curve?" -- it finds the single best-fitting straight line through your data. In R, `lm(y ~ x, data = ...)` fits one for you, and `summary()` shows what it found.
+`lm()` fits the best straight line through your data. Its first argument is a **formula**: `outcome ~ predictor`, read "outcome, predicted from predictor." The column on the **left** of `~` is what the model predicts. Everything on the **right** is used to predict it: `weight_g ~ length_mm + lake_site` uses two predictors, and `weight_g ~ .` uses every other column. You'll see this same formula in almost every R modeling function, not just `lm()`.
+
+```{r, echo=FALSE}
+quiz_question_ui("lm_formula_quiz", "In lm(weight_g ~ length_mm + lake_site, data = fish_clean), which column is the model trying to predict?", c(
+  "weight_g" = "correct",
+  "length_mm" = "wrong_length",
+  "length_mm and lake_site" = "wrong_right",
+  "Every column in fish_clean" = "wrong_all"
+))
+```
+
+`summary()` shows what the model found:
 
 ```{r lm-demo, echo=TRUE}
 model <- lm(weight_g ~ length_mm, data = fish_clean)
 summary(model)
 ```
 
-A few pieces of that printout matter most:
+The pieces that matter most:
 
-- Under **Coefficients**, the **Estimate** in the `length_mm` row is the **slope** -- how much `weight_g` typically changes for each extra 1 mm of `length_mm`.
-- The **Estimate** in the `(Intercept)` row is where the line would cross if `length_mm` were 0 -- part of the line's equation, but not always meaningful on its own (no real fish has 0 length).
-- **Multiple R-squared** near the bottom is the same R^2^ you'll read about next -- how much of the variation in `weight_g` this line accounts for.
+- Under **Coefficients**, the **Estimate** in the `length_mm` row is the **slope**: how much `weight_g` typically changes for each extra 1 mm of length.
+- The `(Intercept)` Estimate is where the line would cross at `length_mm = 0` -- part of the equation, but not meaningful on its own here (no fish is 0 mm long).
+- **Multiple R-squared** is the share of the variation in weight that the line accounts for (next topic).
 
 ```{r, echo=FALSE}
 quiz_question_ui("lm_output_quiz", "In the printout above, which number tells you how much weight_g changes for each extra mm of length_mm?", c(
@@ -2516,15 +2668,13 @@ quiz_question_ui("lm_output_quiz", "In the printout above, which number tells yo
 ))
 ```
 
-### Practice: fit a model and read its slope
+### Practice: fix the model
 
-Below, fit a linear regression predicting `weight_g` from `length_mm` using `fish_clean`, then use `coef()` to pull out just the slope (the `length_mm` estimate). Replace both `FIXME`s.
+This is supposed to answer "how many extra grams of weight go with each extra millimeter of length?" -- but it prints `NA`. Fix it.
 
 ```{r, echo=FALSE}
-exercise_ui("lm_slope_exercise", "model <- lm(FIXME ~ FIXME, data = fish_clean)\ncoef(model)[\"length_mm\"]")
+exercise_ui("lm_slope_exercise", "model <- lm(length_mm ~ weight_g, data = fish_clean)\ncoef(model)[\"length_mm\"]")
 ```
-
-Stuck, or want to double check your thinking? The tutor chat below is available any time -- before you submit, after a failed attempt, or even after you've already passed.
 
 ```{r, echo=FALSE}
 accordion(
@@ -2544,45 +2694,42 @@ accordion(
 
 ## Module 6: R-squared -- how much does this explain?
 
-**R-squared (R^2^)** is a number between 0 and 1 that says how much of the up-and-down variation in the outcome a model actually accounts for:
+**R-squared (R^2^)**, between 0 and 1, is how much of the up-and-down variation in the outcome a model accounts for:
 
 $$
 R^2 = 1 - \frac{\sum_{i=1}^{n}(\text{actual}_i - \text{predicted}_i)^2}{\sum_{i=1}^{n}(\text{actual}_i - \overline{\text{actual}})^2}
 $$
 
-The bottom of the fraction is how much the actual values vary on their own (compared to their average, $\overline{\text{actual}}$); the top is how much of that variation the model's predictions still miss. Subtracting that ratio from 1 turns "fraction still missed" into "fraction explained."
+The bottom of the fraction is how much the actual values vary around their average; the top is how much of that the model still misses. One minus "fraction missed" is "fraction explained."
 
-An R^2^ of 0 means the model explains essentially nothing; an R^2^ of 1 means it explains all of it (rare, and often a sign something's off). Closer to 1 is generally better, but it's not the whole story -- a model can have a high R^2^ and still be the wrong shape (a straight line squeezed through curved data can still post a middling-to-decent R^2^ while clearly missing the pattern), which is why you look at both the number and the shape.
+Closer to 1 is generally better -- but R^2^ doesn't tell you whether the model is the right *shape*. That's why you look at the plot as well as the number.
 
 ```{r, echo=FALSE}
-quiz_question_ui("r_squared_quiz", "A model has an R-squared of 0.85. Another model, on the same data, has an R-squared of 0.20. Which model is explaining more of the variation in the outcome?", c(
-  "The one with R-squared = 0.85" = "correct",
-  "The one with R-squared = 0.20" = "wrong_low",
-  "They're explaining the same amount" = "wrong_same"
+quiz_question_ui("r_squared_quiz", "A straight-line model fit to clearly curved data has an R-squared of 0.91. What should you conclude?", c(
+  "It explains a lot of the variation, but the shape is wrong, so it will miss in a predictable pattern -- check the plot" = "correct",
+  "0.91 is high, so the straight line is the right model" = "wrong_great",
+  "An R-squared over 0.9 means the data were entered wrong" = "wrong_data",
+  "The model is useless and explains nothing" = "wrong_useless"
 ))
 ```
 
 ## Module 6: RMSE -- how far off are the guesses?
 
-**RMSE (root mean squared error)** answers a more concrete question: on average, how far off is the model's prediction from the real value?
+**RMSE (root mean squared error)** answers a concrete question: how far off are the predictions, typically?
 
 $$
 \text{RMSE} = \sqrt{\frac{1}{n}\sum_{i=1}^{n}(\text{actual}_i - \text{predicted}_i)^2}
 $$
 
-$n$ is how many predictions there are, and $\text{actual}_i$/$\text{predicted}_i$ are the real and predicted value for the $i$-th one. In words: for each prediction, subtract to see how far off it was, square those differences (so a miss in either direction counts, and big misses count extra), average the squared differences, then take the square root to get back to the original units.
+In words: subtract to get each miss, **square** each miss (so misses above and below both count, and big ones count extra), average those, then take the square root to get back to the original units. An RMSE of 12 grams means predictions are typically off by around 12 grams. Lower is better.
 
-It's in the *same units* as whatever you're predicting -- an RMSE of 12 grams means the model's guesses are typically off by around 12 grams. Lower RMSE means smaller, better predictions.
+### Practice: check the AI's RMSE
 
-### Practice: compute RMSE
-
-Below, `actual_weights` and `predicted_weights` are two vectors of the same length -- real fish weights, and a model's predictions for those same fish. Compute the RMSE: the square root of the mean of the squared differences between them. Replace the `FIXME`.
+An AI wrote this line to compute RMSE for a model's weight predictions. It runs and reports **0** -- a perfect model. Look at the two vectors (`actual_weights` is 45, 62, 58, 71, 39; `predicted_weights` is 50, 55, 60, 68, 42). Is that believable? Find and fix the bug.
 
 ```{r, echo=FALSE}
-exercise_ui("rmse_exercise", "differences <- actual_weights - predicted_weights\nsqrt(mean(differences^FIXME))")
+exercise_ui("rmse_exercise", "sqrt(mean(actual_weights - predicted_weights)^2)")
 ```
-
-Stuck, or want to double check your thinking? The tutor chat below is available any time -- before you submit, after a failed attempt, or even after you've already passed.
 
 ```{r, echo=FALSE}
 accordion(
@@ -2600,42 +2747,38 @@ accordion(
 )
 ```
 
-## Module 6: Comparing two models
+## Module 6: Training data vs. new data
 
-Once you can compute RMSE (or read an R^2^) for a model, comparing two models on the *same* data and the *same* outcome is just a matter of comparing the numbers: lower RMSE wins, higher R^2^ wins. Two things trip people up here, though:
-
-- **RMSE is only comparable in the same units.** A model predicting weight in grams and one predicting weight in kilograms will have very different-looking RMSEs even if they're equally good -- you can't compare across different units or different outcomes.
-- **Always look at both models on the same held-out data.** A model that looks great on the data it was built from can still do worse on new data it hasn't seen -- which is exactly why the capstone script coming up tests each model on fish it wasn't shown.
+A model learns from **training data**. What you actually care about is how it does on **new data** it hasn't seen -- so scripts usually hold some data back as a **test set** and report the error there. A model can look excellent on its training data simply by memorizing it, then do badly on anything new. A big gap between training error and test error is the warning sign.
 
 ```{r, echo=FALSE}
-quiz_question_ui("rmse_compare_quiz", "Model A has an RMSE of 12 grams. Model B has an RMSE of 40 grams, predicting the same fish's weight. Which model's predictions are typically closer to the truth?", c(
-  "Model A" = "correct",
-  "Model B" = "wrong_b",
-  "Can't tell without also knowing R-squared" = "wrong_r2"
+quiz_question_ui("train_test_quiz", "Model A: RMSE of 5 g on the fish it was trained on, 60 g on new fish. Model B: 25 g on its training fish, 28 g on new fish. Which would you use to predict the weight of new fish?", c(
+  "Model B" = "correct",
+  "Model A -- its training error is far lower" = "wrong_a",
+  "Either one -- they were trained on the same kind of data" = "wrong_either",
+  "Can't tell without R-squared" = "wrong_r2"
 ))
 ```
 
+## Module 6: Comparing two models
+
+To compare two models, use the **same test data** and the **same outcome**: lower RMSE wins, higher R^2^ wins. And RMSE only compares within the same units -- an RMSE in kilograms and one in grams aren't on the same scale.
+
 ```{r, echo=FALSE}
-quiz_question_ui("rmse_units_quiz", "Why can't you directly compare an RMSE of 0.03 (predicting weight in kilograms) to an RMSE of 30 (predicting weight in grams) and conclude the first model is way better?", c(
-  "RMSE is in the same units as what's being predicted, and kilograms and grams aren't directly comparable" = "correct",
-  "You can -- RMSE is unitless, so smaller is always better regardless of units" = "wrong_unitless",
+quiz_question_ui("rmse_units_quiz", "Why can't you directly compare an RMSE of 0.03 (predicting weight in kilograms) to an RMSE of 30 (predicting weight in grams) and conclude the first model is far better?", c(
+  "RMSE is in the units of what's being predicted, and kilograms and grams aren't the same scale" = "correct",
+  "You can -- RMSE is unitless, so smaller is always better" = "wrong_unitless",
   "RMSE only works correctly when the units are grams" = "wrong_grams"
 ))
 ```
 
-## Module 6: Putting it together
-
-This exercise combines both skills from this module: computing RMSE for two models, then actually deciding which one wins.
-
 ### Practice: which model wins?
 
-Below, `actual_values` holds the real weights for a small set of fish. `predicted_model_a` and `predicted_model_b` hold two different models' predictions for those same fish. Compute each model's RMSE into `rmse_a` and `rmse_b`, then assign `"A"` or `"B"` to `better_model` depending on which one actually has the lower error. Replace both `FIXME`s.
+`actual_values` holds the real weights for five fish; `predicted_model_a` and `predicted_model_b` are two models' predictions for those same fish. `rmse_a` is done for you. Compute `rmse_b` the same way, then set `better_model` to `"A"` or `"B"` -- whichever has the lower error.
 
 ```{r, echo=FALSE}
-exercise_ui("module6_cumulative_exercise", "rmse_a <- sqrt(mean((actual_values - predicted_model_a)^2))\nrmse_b <- sqrt(mean((actual_values - predicted_model_b)^FIXME))\nbetter_model <- FIXME")
+exercise_ui("module6_cumulative_exercise", "rmse_a <- sqrt(mean((actual_values - predicted_model_a)^2))\n")
 ```
-
-Stuck, or want to double check your thinking? The tutor chat below is available any time -- before you submit, after a failed attempt, or even after you've already passed.
 
 ```{r, echo=FALSE}
 accordion(
@@ -2655,16 +2798,14 @@ accordion(
 
 ## Module 6: Wrapping up
 
-That covers the basics of judging model output -- none of it required building a model yourself, just the vocabulary and habits to make sense of one you're handed.
-
 **If you remember only a few things from this module:**
 
-- Look at the shape of the data before trusting a straight-line model -- a curve squeezed into a line will systematically miss.
-- `lm(y ~ x, data = ...)` fits a line, and `summary()` shows it -- the Estimate next to your predictor is the slope, and Multiple R-squared near the bottom is the same R^2^ below.
-- RMSE is in the *same units* as what you're predicting, and lower is better; R^2^ is a 0-1 fraction of variation explained, and closer to 1 is better.
-- Always compare two models on the same held-out data they weren't trained on -- looking good on data a model has already seen doesn't count.
+- In `outcome ~ predictors`, the left side is what's predicted. Read the formula first, and you know what a model is for.
+- Look at the shape of the data, not just R^2^ -- a high R^2^ can hide the wrong shape.
+- RMSE is in the units of the outcome, and lower is better -- but only error on **new** data tells you how a model will really do.
+- Model code that runs is not proof it's right. A "perfect" result is a reason to check, not celebrate.
 
-That's exactly what the capstone preview coming up asks you to do: a real script fits two models to real fish data and prints their RMSE, and your job is to read that output and decide what it's telling you.
+That's exactly what the capstone preview asks of you: a real script fits two models to real fish data and reports their error on held-out fish, and your job is to read that output and decide what it's telling you.
 
 ```{r setup-module7, context="setup", include=FALSE}
 # Question generators for the Extra Practice module. Each module (2-6) now
