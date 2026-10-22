@@ -1,0 +1,140 @@
+"quiz_key","topic_id","question","choice_id","choice_label","module_number","quiz_order"
+"install_quiz","module-1-installing-r-and-rstudio","Which of these is true about the relationship between R and RStudio?","wrong_replaces","RStudio replaces R -- you only need to install RStudio.",1,1
+"install_quiz","module-1-installing-r-and-rstudio","Which of these is true about the relationship between R and RStudio?","correct","R is the language/engine, and RStudio is an interface built on top of it.",1,1
+"install_quiz","module-1-installing-r-and-rstudio","Which of these is true about the relationship between R and RStudio?","wrong_unrelated","R and RStudio are two unrelated tools with no connection.",1,1
+"install_r_quiz","module-1-installing-r-and-rstudio","You've just downloaded the R installer file (the .exe or .pkg). What should you do with it?","wrong_delete","Delete it -- you don't need it once it's downloaded.",1,2
+"install_r_quiz","module-1-installing-r-and-rstudio","You've just downloaded the R installer file (the .exe or .pkg). What should you do with it?","correct","Open/run it and click through the installation wizard, accepting the defaults.",1,2
+"install_r_quiz","module-1-installing-r-and-rstudio","You've just downloaded the R installer file (the .exe or .pkg). What should you do with it?","wrong_rename","Rename it to ""RStudio"" so it opens the right program.",1,2
+"install_rstudio_quiz","module-1-installing-r-and-rstudio","Suppose you skipped installing R and only installed RStudio. What would happen when you tried to open RStudio?","wrong_same","It would work exactly the same -- RStudio doesn't actually need R.",1,3
+"install_rstudio_quiz","module-1-installing-r-and-rstudio","Suppose you skipped installing R and only installed RStudio. What would happen when you tried to open RStudio?","correct","It would either fail to open properly or prompt you that no R installation was found.",1,3
+"install_rstudio_quiz","module-1-installing-r-and-rstudio","Suppose you skipped installing R and only installed RStudio. What would happen when you tried to open RStudio?","wrong_autoinstall","It would automatically download and install R for you first.",1,3
+"first_check_quiz","module-1-installing-r-and-rstudio","You open RStudio, type 2 + 2 in the Console, and press Enter -- but instead of [1] 4, you get an error like ""R version not found"" or the Console looks broken. What's the most likely explanation?","wrong_broken","RStudio is broken and needs to be reinstalled.",1,4
+"first_check_quiz","module-1-installing-r-and-rstudio","You open RStudio, type 2 + 2 in the Console, and press Enter -- but instead of [1] 4, you get an error like ""R version not found"" or the Console looks broken. What's the most likely explanation?","correct","R wasn't fully installed (or installed correctly) in Step 1 -- go back and reinstall R, then reopen RStudio.",1,4
+"first_check_quiz","module-1-installing-r-and-rstudio","You open RStudio, type 2 + 2 in the Console, and press Enter -- but instead of [1] 4, you get an error like ""R version not found"" or the Console looks broken. What's the most likely explanation?","wrong_mathpkg","You need to install a separate ""math package"" before RStudio can do arithmetic.",1,4
+"panes_quiz","module-1-the-rstudio-panes","If you want to see a plot you just created, which pane would you look at?","wrong_source","Source",1,5
+"panes_quiz","module-1-the-rstudio-panes","If you want to see a plot you just created, which pane would you look at?","wrong_console","Console",1,5
+"panes_quiz","module-1-the-rstudio-panes","If you want to see a plot you just created, which pane would you look at?","wrong_env","Environment / History",1,5
+"panes_quiz","module-1-the-rstudio-panes","If you want to see a plot you just created, which pane would you look at?","correct","Files / Plots / Packages / Help",1,5
+"wd_quiz","module-1-working-directory","getwd() prints ""C:/Users/sam/Documents"". Your file is at C:/Users/sam/Documents/project/data/birds.csv. Which line reads it?","wrong_name","read.csv(""birds.csv"")",1,6
+"wd_quiz","module-1-working-directory","getwd() prints ""C:/Users/sam/Documents"". Your file is at C:/Users/sam/Documents/project/data/birds.csv. Which line reads it?","wrong_partial","read.csv(""data/birds.csv"")",1,6
+"wd_quiz","module-1-working-directory","getwd() prints ""C:/Users/sam/Documents"". Your file is at C:/Users/sam/Documents/project/data/birds.csv. Which line reads it?","correct","read.csv(""project/data/birds.csv"")",1,6
+"wd_quiz","module-1-working-directory","getwd() prints ""C:/Users/sam/Documents"". Your file is at C:/Users/sam/Documents/project/data/birds.csv. Which line reads it?","wrong_folder","read.csv(""C:/Users/sam/Documents"")",1,6
+"packages_quiz","module-2-packages","You run library(janitor) and get: Error in library(janitor) : there is no package called 'janitor'. What do you run?","correct","install.packages(""janitor""), then library(janitor) again",2,7
+"packages_quiz","module-2-packages","You run library(janitor) and get: Error in library(janitor) : there is no package called 'janitor'. What do you run?","wrong_quotes","library(""janitor"") -- with quotes this time",2,7
+"packages_quiz","module-2-packages","You run library(janitor) and get: Error in library(janitor) : there is no package called 'janitor'. What do you run?","wrong_update","update.packages()",2,7
+"packages_quiz","module-2-packages","You run library(janitor) and get: Error in library(janitor) : there is no package called 'janitor'. What do you run?","wrong_restart","Nothing -- just restart RStudio and try again",2,7
+"console_quiz","module-2-the-console","You press Enter and the Console shows + instead of >. What does that mean?","correct","R is waiting for you to finish the command -- usually a missing ) or quotation mark",2,8
+"console_quiz","module-2-the-console","You press Enter and the Console shows + instead of >. What does that mean?","wrong_add","R added the numbers you typed",2,8
+"console_quiz","module-2-the-console","You press Enter and the Console shows + instead of >. What does that mean?","wrong_crash","R crashed and needs to be restarted",2,8
+"running_quiz","module-2-running-code-someone-gives-you","A script's line 1 is temps <- c(18, 21, 25) and line 2 is mean(temps). You open it fresh, click on line 2, press Ctrl+Enter, and get: object 'temps' not found. Why?","correct","Line 1 hasn't been run in this session yet",2,9
+"running_quiz","module-2-running-code-someone-gives-you","A script's line 1 is temps <- c(18, 21, 25) and line 2 is mean(temps). You open it fresh, click on line 2, press Ctrl+Enter, and get: object 'temps' not found. Why?","wrong_typo","temps is spelled differently on the two lines",2,9
+"running_quiz","module-2-running-code-someone-gives-you","A script's line 1 is temps <- c(18, 21, 25) and line 2 is mean(temps). You open it fresh, click on line 2, press Ctrl+Enter, and get: object 'temps' not found. Why?","wrong_package","mean() needs a package loaded first",2,9
+"running_quiz","module-2-running-code-someone-gives-you","A script's line 1 is temps <- c(18, 21, 25) and line 2 is mean(temps). You open it fresh, click on line 2, press Ctrl+Enter, and get: object 'temps' not found. Why?","wrong_corrupt","The script file is corrupted",2,9
+"warning_quiz","module-2-errors-and-warnings","You run as.numeric(c(""12"", ""15"", ""n/a"")) and get [1] 12 15 NA, plus: Warning message: NAs introduced by coercion. What does the warning mean?","correct","It ran, but ""n/a"" couldn't become a number, so it's now NA -- check before using the result",2,10
+"warning_quiz","module-2-errors-and-warnings","You run as.numeric(c(""12"", ""15"", ""n/a"")) and get [1] 12 15 NA, plus: Warning message: NAs introduced by coercion. What does the warning mean?","wrong_ignore","Nothing important -- warnings can be ignored",2,10
+"warning_quiz","module-2-errors-and-warnings","You run as.numeric(c(""12"", ""15"", ""n/a"")) and get [1] 12 15 NA, plus: Warning message: NAs introduced by coercion. What does the warning mean?","wrong_failed","The code failed and produced no result",2,10
+"warning_quiz","module-2-errors-and-warnings","You run as.numeric(c(""12"", ""15"", ""n/a"")) and get [1] 12 15 NA, plus: Warning message: NAs introduced by coercion. What does the warning mean?","wrong_fixed","R fixed the problem automatically",2,10
+"help_quiz","module-2-getting-help","Based on that Usage line, what does round(2.567) return?","correct","3",2,11
+"help_quiz","module-2-getting-help","Based on that Usage line, what does round(2.567) return?","wrong_257","2.57",2,11
+"help_quiz","module-2-getting-help","Based on that Usage line, what does round(2.567) return?","wrong_error","An error, because digits wasn't given",2,11
+"help_quiz","module-2-getting-help","Based on that Usage line, what does round(2.567) return?","wrong_25","2.5",2,11
+"types_quiz","module-3-data-types","What happens when you run ""5"" + 3?","wrong_8","8",3,12
+"types_quiz","module-3-data-types","What happens when you run ""5"" + 3?","wrong_53","""53""",3,12
+"types_quiz","module-3-data-types","What happens when you run ""5"" + 3?","correct","An error",3,12
+"types_quiz","module-3-data-types","What happens when you run ""5"" + 3?","wrong_na","NA",3,12
+"naming_quiz","module-3-variables-and-names","You run Score <- 90, then score + 5. What happens?","wrong_95","95",3,13
+"naming_quiz","module-3-variables-and-names","You run Score <- 90, then score + 5. What happens?","correct","An error: object 'score' not found",3,13
+"naming_quiz","module-3-variables-and-names","You run Score <- 90, then score + 5. What happens?","wrong_5","5",3,13
+"naming_quiz","module-3-variables-and-names","You run Score <- 90, then score + 5. What happens?","wrong_na","NA",3,13
+"assign_snapshot_quiz","module-3-variables-and-names","What does the last line print?  price <- 4;  qty <- 3;  total <- price * qty;  price <- 5;  total","correct","12",3,14
+"assign_snapshot_quiz","module-3-variables-and-names","What does the last line print?  price <- 4;  qty <- 3;  total <- price * qty;  price <- 5;  total","wrong_15","15",3,14
+"assign_snapshot_quiz","module-3-variables-and-names","What does the last line print?  price <- 4;  qty <- 3;  total <- price * qty;  price <- 5;  total","wrong_error","An error",3,14
+"assign_snapshot_quiz","module-3-variables-and-names","What does the last line print?  price <- 4;  qty <- 3;  total <- price * qty;  price <- 5;  total","wrong_5","5",3,14
+"vector_na_quiz","module-3-vectors","heights has 4 values. What does heights[5] return?","correct","NA",3,15
+"vector_na_quiz","module-3-vectors","heights has 4 values. What does heights[5] return?","wrong_error","An error",3,15
+"vector_na_quiz","module-3-vectors","heights has 4 values. What does heights[5] return?","wrong_66","66 (the last value)",3,15
+"vector_na_quiz","module-3-vectors","heights has 4 values. What does heights[5] return?","wrong_64","64 (it wraps around)",3,15
+"structures_quiz","module-3-data-structures","A data frame called sites has columns name and temp. What is sites$temp?","correct","A vector of every value in the temp column",3,16
+"structures_quiz","module-3-data-structures","A data frame called sites has columns name and temp. What is sites$temp?","wrong_one","Just the first value in the temp column",3,16
+"structures_quiz","module-3-data-structures","A data frame called sites has columns name and temp. What is sites$temp?","wrong_df","A one-row data frame",3,16
+"structures_quiz","module-3-data-structures","A data frame called sites has columns name and temp. What is sites$temp?","wrong_text","The text ""temp""",3,16
+"comparison_quiz","module-3-functions-and-comparisons","You want to check whether score is equal to 100, without changing its value. Which line does that?","wrong_assign1","score = 100",3,17
+"comparison_quiz","module-3-functions-and-comparisons","You want to check whether score is equal to 100, without changing its value. Which line does that?","correct","score == 100",3,17
+"comparison_quiz","module-3-functions-and-comparisons","You want to check whether score is equal to 100, without changing its value. Which line does that?","wrong_assign2","score <- 100",3,17
+"formula_quiz","module-3-turning-a-formula-into-code","Which line computes the average of a and b?","correct","(a + b) / 2",3,18
+"formula_quiz","module-3-turning-a-formula-into-code","Which line computes the average of a and b?","wrong_precedence","a + b / 2",3,18
+"formula_quiz","module-3-turning-a-formula-into-code","Which line computes the average of a and b?","wrong_mean","mean(a, b)",3,18
+"import_quiz","module-3-importing-data","In that str() output, why is depth chr (text) instead of num?","correct","One of its values, ""n/a"", isn't a number, so R read the whole column as text",3,19
+"import_quiz","module-3-importing-data","In that str() output, why is depth chr (text) instead of num?","wrong_csv","read.csv() always imports every column as text",3,19
+"import_quiz","module-3-importing-data","In that str() output, why is depth chr (text) instead of num?","wrong_decimal","R can't store decimal numbers like 1.2",3,19
+"import_quiz","module-3-importing-data","In that str() output, why is depth chr (text) instead of num?","wrong_wd","The working directory was set wrong",3,19
+"inspect_quiz","module-4-inspecting-a-data-frame","Which line tells you how many fish have a missing weight?","wrong_vector","is.na(fish_survey$Weight.g)",4,20
+"inspect_quiz","module-4-inspecting-a-data-frame","Which line tells you how many fish have a missing weight?","correct","sum(is.na(fish_survey$Weight.g))",4,20
+"inspect_quiz","module-4-inspecting-a-data-frame","Which line tells you how many fish have a missing weight?","wrong_length","length(fish_survey$Weight.g)",4,20
+"inspect_quiz","module-4-inspecting-a-data-frame","Which line tells you how many fish have a missing weight?","wrong_dims","nrow(fish_survey) - ncol(fish_survey)",4,20
+"indexing_quiz","module-4-indexing-and-subsetting","What does fish_clean[2, ""species""] return?","correct","The single value ""Bluegill""",4,21
+"indexing_quiz","module-4-indexing-and-subsetting","What does fish_clean[2, ""species""] return?","wrong_column","The whole species column",4,21
+"indexing_quiz","module-4-indexing-and-subsetting","What does fish_clean[2, ""species""] return?","wrong_row","Row 2, with every column",4,21
+"indexing_quiz","module-4-indexing-and-subsetting","What does fish_clean[2, ""species""] return?","wrong_error","An error -- you can't mix a row number and a column name",4,21
+"pipe_quiz","module-4-the-pipe-operator","What does c(4, 9, 16) |> sqrt() |> sum() return?","correct","9",4,22
+"pipe_quiz","module-4-the-pipe-operator","What does c(4, 9, 16) |> sqrt() |> sum() return?","wrong_order","5.39 (the square root of 29)",4,22
+"pipe_quiz","module-4-the-pipe-operator","What does c(4, 9, 16) |> sqrt() |> sum() return?","wrong_nosqrt","29",4,22
+"pipe_quiz","module-4-the-pipe-operator","What does c(4, 9, 16) |> sqrt() |> sum() return?","wrong_vector","c(2, 3, 4)",4,22
+"arrange_na_quiz","module-4-adding-columns-and-sorting","One fish in fish_clean has a missing length_mm. After fish_clean |> arrange(desc(length_mm)), where is it?","correct","The last row",4,23
+"arrange_na_quiz","module-4-adding-columns-and-sorting","One fish in fish_clean has a missing length_mm. After fish_clean |> arrange(desc(length_mm)), where is it?","wrong_first","The first row",4,23
+"arrange_na_quiz","module-4-adding-columns-and-sorting","One fish in fish_clean has a missing length_mm. After fish_clean |> arrange(desc(length_mm)), where is it?","wrong_dropped","Gone -- it's dropped from the result",4,23
+"arrange_na_quiz","module-4-adding-columns-and-sorting","One fish in fish_clean has a missing length_mm. After fish_clean |> arrange(desc(length_mm)), where is it?","wrong_error","Nowhere -- the code gives an error",4,23
+"group_count_quiz","module-4-grouping-and-summarizing","How many rows does fish_clean |> group_by(species, lake_site) |> summarize(n = n()) return? (Scroll up to the data if you need to.)","wrong_species_only","3",4,24
+"group_count_quiz","module-4-grouping-and-summarizing","How many rows does fish_clean |> group_by(species, lake_site) |> summarize(n = n()) return? (Scroll up to the data if you need to.)","correct","5",4,24
+"group_count_quiz","module-4-grouping-and-summarizing","How many rows does fish_clean |> group_by(species, lake_site) |> summarize(n = n()) return? (Scroll up to the data if you need to.)","wrong_all_combos","6",4,24
+"group_count_quiz","module-4-grouping-and-summarizing","How many rows does fish_clean |> group_by(species, lake_site) |> summarize(n = n()) return? (Scroll up to the data if you need to.)","wrong_rows","10",4,24
+"na_quiz","module-4-handling-missing-data","What does mean(c(10, NA, 30)) return, without any extra arguments?","wrong_20","20",4,25
+"na_quiz","module-4-handling-missing-data","What does mean(c(10, NA, 30)) return, without any extra arguments?","correct","NA",4,25
+"na_quiz","module-4-handling-missing-data","What does mean(c(10, NA, 30)) return, without any extra arguments?","wrong_40","40",4,25
+"bracket_na_quiz","module-4-handling-missing-data","How many rows does fish_clean[fish_clean$length_mm > 200, ] return?","wrong_4","4",4,26
+"bracket_na_quiz","module-4-handling-missing-data","How many rows does fish_clean[fish_clean$length_mm > 200, ] return?","correct","5",4,26
+"bracket_na_quiz","module-4-handling-missing-data","How many rows does fish_clean[fish_clean$length_mm > 200, ] return?","wrong_9","9",4,26
+"bracket_na_quiz","module-4-handling-missing-data","How many rows does fish_clean[fish_clean$length_mm > 200, ] return?","wrong_error","An error",4,26
+"ggplot_grammar_quiz","module-5-basic-plots-with-ggplot2","What does ggplot(fish_clean, aes(x = length_mm, y = weight_g)) + geom_point(aes(color = ""blue"")) draw?","correct","Points in ggplot's default reddish color, with a legend labeled ""blue""",5,27
+"ggplot_grammar_quiz","module-5-basic-plots-with-ggplot2","What does ggplot(fish_clean, aes(x = length_mm, y = weight_g)) + geom_point(aes(color = ""blue"")) draw?","wrong_blue","Blue points, with no legend",5,27
+"ggplot_grammar_quiz","module-5-basic-plots-with-ggplot2","What does ggplot(fish_clean, aes(x = length_mm, y = weight_g)) + geom_point(aes(color = ""blue"")) draw?","wrong_error","An error",5,27
+"ggplot_grammar_quiz","module-5-basic-plots-with-ggplot2","What does ggplot(fish_clean, aes(x = length_mm, y = weight_g)) + geom_point(aes(color = ""blue"")) draw?","wrong_none","An empty plot with no points",5,27
+"ggplot_warning_quiz","module-5-histograms","What does that warning mean?","correct","The 2 fish with a missing weight were left out of the plot",5,28
+"ggplot_warning_quiz","module-5-histograms","What does that warning mean?","wrong_wrong","The plot is wrong and needs to be redone",5,28
+"ggplot_warning_quiz","module-5-histograms","What does that warning mean?","wrong_bins","Two of the bins were empty",5,28
+"ggplot_warning_quiz","module-5-histograms","What does that warning mean?","wrong_deleted","2 rows were deleted from fish_clean",5,28
+"markdown_quiz","module-5-working-habits","Someone sends you analysis.Rmd. How do you get the finished report, with the text, code, and results together?","correct","Open it in RStudio and click Knit",5,29
+"markdown_quiz","module-5-working-habits","Someone sends you analysis.Rmd. How do you get the finished report, with the text, code, and results together?","wrong_console","Copy the code chunks into the Console",5,29
+"markdown_quiz","module-5-working-habits","Someone sends you analysis.Rmd. How do you get the finished report, with the text, code, and results together?","wrong_rename","Rename it to analysis.R and click Source",5,29
+"scripts_quiz","module-5-working-habits","A script you were sent starts with setwd(""C:/Users/maria/Desktop/thesis"") and fails on your computer with: cannot change working directory. Why?","correct","That folder exists on Maria's computer, not yours",5,30
+"scripts_quiz","module-5-working-habits","A script you were sent starts with setwd(""C:/Users/maria/Desktop/thesis"") and fails on your computer with: cannot change working directory. Why?","wrong_admin","You need administrator rights to run setwd()",5,30
+"scripts_quiz","module-5-working-habits","A script you were sent starts with setwd(""C:/Users/maria/Desktop/thesis"") and fails on your computer with: cannot change working directory. Why?","wrong_package","setwd() needs a package loaded first",5,30
+"scripts_quiz","module-5-working-habits","A script you were sent starts with setwd(""C:/Users/maria/Desktop/thesis"") and fails on your computer with: cannot change working directory. Why?","wrong_slashes","Windows paths need backslashes, not forward slashes",5,30
+"naming_files_quiz","module-5-working-habits","Which of these is the best file name for a script that cleans survey data?","correct","clean_survey_data.R",5,31
+"naming_files_quiz","module-5-working-habits","Which of these is the best file name for a script that cleans survey data?","wrong_final","Final FINAL script (2).R",5,31
+"naming_files_quiz","module-5-working-habits","Which of these is the best file name for a script that cleans survey data?","wrong_vague","asdf.R",5,31
+"version_control_quiz","module-5-working-habits","What is the main purpose of a version control system like Git?","correct","Tracking changes to files over time so you can see history and undo mistakes",5,32
+"version_control_quiz","module-5-working-habits","What is the main purpose of a version control system like Git?","wrong_autofix","Automatically fixing bugs in your code",5,32
+"version_control_quiz","module-5-working-habits","What is the main purpose of a version control system like Git?","wrong_standalone","Making your R scripts run without RStudio installed",5,32
+"linear_shape_quiz","module-6-is-it-a-line-or-a-curve","Look at ""Relationship A"" above. Does it look like a straight line or a curve?","correct","A straight line",6,33
+"linear_shape_quiz","module-6-is-it-a-line-or-a-curve","Look at ""Relationship A"" above. Does it look like a straight line or a curve?","wrong_curve","A curve",6,33
+"curved_shape_quiz","module-6-is-it-a-line-or-a-curve","Look at ""Relationship B"" above. Does it look like a straight line or a curve?","correct","A curve",6,34
+"curved_shape_quiz","module-6-is-it-a-line-or-a-curve","Look at ""Relationship B"" above. Does it look like a straight line or a curve?","wrong_line","A straight line",6,34
+"lm_formula_quiz","module-6-linear-regression","In lm(weight_g ~ length_mm + lake_site, data = fish_clean), which column is the model trying to predict?","correct","weight_g",6,35
+"lm_formula_quiz","module-6-linear-regression","In lm(weight_g ~ length_mm + lake_site, data = fish_clean), which column is the model trying to predict?","wrong_length","length_mm",6,35
+"lm_formula_quiz","module-6-linear-regression","In lm(weight_g ~ length_mm + lake_site, data = fish_clean), which column is the model trying to predict?","wrong_right","length_mm and lake_site",6,35
+"lm_formula_quiz","module-6-linear-regression","In lm(weight_g ~ length_mm + lake_site, data = fish_clean), which column is the model trying to predict?","wrong_all","Every column in fish_clean",6,35
+"lm_output_quiz","module-6-linear-regression","In the printout above, which number tells you how much weight_g changes for each extra mm of length_mm?","correct","The Estimate in the length_mm row",6,36
+"lm_output_quiz","module-6-linear-regression","In the printout above, which number tells you how much weight_g changes for each extra mm of length_mm?","wrong_intercept","The Estimate in the (Intercept) row",6,36
+"lm_output_quiz","module-6-linear-regression","In the printout above, which number tells you how much weight_g changes for each extra mm of length_mm?","wrong_r2","The Multiple R-squared value",6,36
+"r_squared_quiz","module-6-r-squared-how-much-does-this-explain","A straight-line model fit to clearly curved data has an R-squared of 0.91. What should you conclude?","correct","It explains a lot of the variation, but the shape is wrong, so it will miss in a predictable pattern -- check the plot",6,37
+"r_squared_quiz","module-6-r-squared-how-much-does-this-explain","A straight-line model fit to clearly curved data has an R-squared of 0.91. What should you conclude?","wrong_great","0.91 is high, so the straight line is the right model",6,37
+"r_squared_quiz","module-6-r-squared-how-much-does-this-explain","A straight-line model fit to clearly curved data has an R-squared of 0.91. What should you conclude?","wrong_data","An R-squared over 0.9 means the data were entered wrong",6,37
+"r_squared_quiz","module-6-r-squared-how-much-does-this-explain","A straight-line model fit to clearly curved data has an R-squared of 0.91. What should you conclude?","wrong_useless","The model is useless and explains nothing",6,37
+"train_test_quiz","module-6-training-data-vs.-new-data","Model A: RMSE of 5 g on the fish it was trained on, 60 g on new fish. Model B: 25 g on its training fish, 28 g on new fish. Which would you use to predict the weight of new fish?","correct","Model B",6,38
+"train_test_quiz","module-6-training-data-vs.-new-data","Model A: RMSE of 5 g on the fish it was trained on, 60 g on new fish. Model B: 25 g on its training fish, 28 g on new fish. Which would you use to predict the weight of new fish?","wrong_a","Model A -- its training error is far lower",6,38
+"train_test_quiz","module-6-training-data-vs.-new-data","Model A: RMSE of 5 g on the fish it was trained on, 60 g on new fish. Model B: 25 g on its training fish, 28 g on new fish. Which would you use to predict the weight of new fish?","wrong_either","Either one -- they were trained on the same kind of data",6,38
+"train_test_quiz","module-6-training-data-vs.-new-data","Model A: RMSE of 5 g on the fish it was trained on, 60 g on new fish. Model B: 25 g on its training fish, 28 g on new fish. Which would you use to predict the weight of new fish?","wrong_r2","Can't tell without R-squared",6,38
+"rmse_units_quiz","module-6-comparing-two-models","Why can't you directly compare an RMSE of 0.03 (predicting weight in kilograms) to an RMSE of 30 (predicting weight in grams) and conclude the first model is far better?","correct","RMSE is in the units of what's being predicted, and kilograms and grams aren't the same scale",6,39
+"rmse_units_quiz","module-6-comparing-two-models","Why can't you directly compare an RMSE of 0.03 (predicting weight in kilograms) to an RMSE of 30 (predicting weight in grams) and conclude the first model is far better?","wrong_unitless","You can -- RMSE is unitless, so smaller is always better",6,39
+"rmse_units_quiz","module-6-comparing-two-models","Why can't you directly compare an RMSE of 0.03 (predicting weight in kilograms) to an RMSE of 30 (predicting weight in grams) and conclude the first model is far better?","wrong_grams","RMSE only works correctly when the units are grams",6,39

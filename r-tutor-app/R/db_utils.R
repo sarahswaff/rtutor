@@ -97,11 +97,42 @@ log_chat <- function(con, student_id, exercise_id, role, message) {
   )
 }
 
+#' Record one block of active time on a learnr topic (see activity_time in
+#' schema.sql), and bump students.last_active_at -- which otherwise only
+#' moves at login, making "last active" really mean "last logged in".
+#' module_number is parsed from learnr's topic anchor ('module-4-...').
+log_activity <- function(con, student_id, topic_id, active_seconds, window_start, window_end) {
+  module_number <- suppressWarnings(as.integer(sub("^module-([0-9]+)-.*$", "\\1", topic_id)))
+  dbExecute(
+    con,
+    "INSERT INTO activity_time
+       (student_id, topic_id, module_number, active_seconds, window_start, window_end)
+     VALUES ($1, $2, $3, $4, $5, $6)",
+    params = list(student_id, topic_id, module_number, as.integer(round(active_seconds)), window_start, window_end)
+  )
+  dbExecute(
+    con,
+    "UPDATE students SET last_active_at = now() WHERE student_id = $1",
+    params = list(student_id)
+  )
+}
+
+#' Record one quiz submission (every retry is its own row).
+log_quiz_response <- function(con, student_id, quiz_key, module_number, choice_id, correct) {
+  dbExecute(
+    con,
+    "INSERT INTO quiz_responses (student_id, quiz_key, module_number, choice_id, correct)
+     VALUES ($1, $2, $3, $4, $5)",
+    params = list(student_id, quiz_key, as.integer(module_number), choice_id, correct)
+  )
+}
+
 # ---------------------------------------------------------------------------
 # Instructor dashboard queries.
-# Read-only aggregate queries used only by instructor_dashboard/app.R.
-# Kept here (not in the dashboard app itself) for the same reason as
-# everything else in this file: one shared place for SQL against this schema.
+# The dashboard reads raw tables once via load_dashboard_data() and computes
+# everything else in R (R/dashboard_metrics.R). Kept here (not in the
+# dashboard app itself) for the same reason as everything else in this
+# file: one shared place for SQL against this schema.
 # ---------------------------------------------------------------------------
 
 #' RPostgres returns Postgres bigint (e.g. every COUNT(*)) as bit64::integer64,
@@ -118,98 +149,41 @@ fix_int64_cols <- function(df) {
   df
 }
 
-#' One row per student: activity timestamps + exercises passed/attempted.
-#' "Exercises passed" counts distinct exercises with a passing row in
-#' exercise_mastery (most recent attempt only, per that view's definition).
-get_roster_summary <- function(con) {
-  fix_int64_cols(dbGetQuery(con, "
-    SELECT
-      s.student_id,
-      s.display_name,
-      s.first_login_at,
-      s.last_active_at,
-      COALESCE(p.n_passed, 0)    AS exercises_passed,
-      COALESCE(a.n_attempted, 0) AS exercises_attempted
-    FROM students s
-    LEFT JOIN (
-      SELECT student_id, COUNT(DISTINCT exercise_id) AS n_passed
-      FROM exercise_mastery
-      WHERE passed = true
-      GROUP BY student_id
-    ) p ON p.student_id = s.student_id
-    LEFT JOIN (
-      SELECT student_id, COUNT(DISTINCT exercise_id) AS n_attempted
+#' Every raw table the instructor dashboard needs, in one round trip. All
+#' dashboard numbers are computed in R from this list (R/dashboard_metrics.R)
+#' rather than in per-chart SQL -- at a single course's scale (hundreds of
+#' students, thousands of rows) pulling the raw rows is cheap, and it means
+#' the metrics are plain functions that can be tested against synthetic data
+#' (R/dashboard_demo_data.R) without a populated database. Returns a named
+#' list of data frames; see make_demo_dashboard_data() for the exact columns.
+load_dashboard_data <- function(con) {
+  q <- function(sql) fix_int64_cols(dbGetQuery(con, sql))
+  list(
+    students = q("SELECT student_id, display_name, first_login_at, last_active_at FROM students"),
+    exercises = q("
+      SELECT e.exercise_id, e.exercise_key, e.title, e.order_index,
+             m.module_number, m.title AS module_title
+      FROM exercises e JOIN modules m ON m.module_id = e.module_id
+      ORDER BY m.module_number, e.order_index
+    "),
+    attempts = q("
+      SELECT attempt_id, student_id, exercise_id, submitted_code, passed,
+             gradethis_message, created_at
       FROM exercise_attempts
-      GROUP BY student_id
-    ) a ON a.student_id = s.student_id
-    ORDER BY s.last_active_at DESC NULLS LAST
-  "))
-}
-
-#' Per student, per module: how many of that module's exercises are passed
-#' vs. how many exist. Used to derive "modules completed" on the dashboard.
-get_module_completion <- function(con) {
-  fix_int64_cols(dbGetQuery(con, "
-    SELECT
-      s.student_id,
-      s.display_name,
-      m.module_id,
-      m.module_number,
-      m.title AS module_title,
-      COUNT(DISTINCT e.exercise_id)                                   AS n_exercises,
-      COUNT(DISTINCT em.exercise_id) FILTER (WHERE em.passed)         AS n_passed
-    FROM students s
-    CROSS JOIN modules m
-    JOIN exercises e ON e.module_id = m.module_id
-    LEFT JOIN exercise_mastery em
-      ON em.exercise_id = e.exercise_id AND em.student_id = s.student_id
-    GROUP BY s.student_id, s.display_name, m.module_id, m.module_number, m.title
-    ORDER BY s.display_name, m.module_number
-  "))
-}
-
-#' Per exercise: attempt counts and how many distinct students have
-#' attempted / passed it. Basis for the pass-rate chart and table.
-get_exercise_stats <- function(con) {
-  fix_int64_cols(dbGetQuery(con, "
-    SELECT
-      e.exercise_id,
-      m.module_number,
-      m.title AS module_title,
-      e.order_index,
-      e.title AS exercise_title,
-      COUNT(a.attempt_id)                                     AS n_attempts,
-      COUNT(DISTINCT a.student_id)                             AS n_students_attempted,
-      COUNT(DISTINCT a.student_id) FILTER (WHERE a.passed)     AS n_students_passed
-    FROM exercises e
-    JOIN modules m ON m.module_id = e.module_id
-    LEFT JOIN exercise_attempts a ON a.exercise_id = e.exercise_id
-    GROUP BY e.exercise_id, m.module_number, m.title, e.order_index, e.title
-    ORDER BY m.module_number, e.order_index
-  "))
-}
-
-#' Students currently stuck: an exercise with 3+ attempts that is still
-#' not passed as of the most recent attempt (per exercise_mastery).
-get_struggling_students <- function(con, min_attempts = 3) {
-  fix_int64_cols(dbGetQuery(con, "
-    SELECT
-      s.display_name,
-      e.title AS exercise_title,
-      m.module_number,
-      COUNT(a.attempt_id) AS n_attempts,
-      MAX(a.created_at) AS last_attempt_at
-    FROM exercise_attempts a
-    JOIN students s ON s.student_id = a.student_id
-    JOIN exercises e ON e.exercise_id = a.exercise_id
-    JOIN modules m ON m.module_id = e.module_id
-    JOIN exercise_mastery em
-      ON em.student_id = a.student_id AND em.exercise_id = a.exercise_id
-    WHERE em.passed = false
-    GROUP BY s.display_name, e.title, m.module_number, a.student_id, a.exercise_id
-    HAVING COUNT(a.attempt_id) >= $1
-    ORDER BY n_attempts DESC, last_attempt_at DESC
-  ", params = list(min_attempts)))
+    "),
+    chats = q("
+      SELECT chat_id, student_id, exercise_id, role, message, help_category, created_at
+      FROM chat_logs
+    "),
+    activity = q("
+      SELECT student_id, topic_id, module_number, active_seconds, window_start, window_end
+      FROM activity_time
+    "),
+    quiz = q("
+      SELECT student_id, quiz_key, module_number, choice_id, correct, created_at
+      FROM quiz_responses
+    ")
+  )
 }
 
 # ---------------------------------------------------------------------------
@@ -256,18 +230,16 @@ get_student_progress <- function(con, student_id) {
 }
 
 # ---------------------------------------------------------------------------
-# Chat transcript + help-category queries, used by the instructor dashboard's
-# "Chats" tab and by R/classify_chat_messages.R (the offline classifier).
-# Categorization is lazy/offline by design -- these functions never touch
+# Help-category queries, used by R/classify_chat_messages.R (the offline
+# classifier). Categorization is lazy/offline by design -- these functions never touch
 # the live course.Rmd tutorial app, only chat_logs.help_category, which
 # R/classify_chat_messages.R fills in after the fact. See that file and
 # CLAUDE.md's "Chat categorization" section for why.
 # ---------------------------------------------------------------------------
 
 #' The recognized help_category values (must match the DB CHECK constraint
-#' in schema.sql exactly). Exported here so both the classifier and the
-#' dashboard render the same fixed list/order rather than each hardcoding
-#' their own copy.
+#' in schema.sql exactly). Kept here so the classifier and the schema's
+#' CHECK constraint have one place to stay in sync.
 HELP_CATEGORIES <- c(
   "syntax_error", "conceptual_confusion", "how_do_i_start",
   "wants_answer", "environment_setup", "other"
@@ -293,52 +265,4 @@ set_chat_message_category <- function(con, chat_id, category) {
     "UPDATE chat_logs SET help_category = $1 WHERE chat_id = $2",
     params = list(category, chat_id)
   )
-}
-
-#' Count of student messages per help_category, across the whole course.
-#' Uncategorized messages (help_category IS NULL -- not yet run through the
-#' classifier) are grouped under the literal label "uncategorized" rather
-#' than dropped, so the dashboard can show that a backlog exists.
-get_help_category_breakdown <- function(con) {
-  fix_int64_cols(dbGetQuery(con, "
-    SELECT COALESCE(help_category, 'uncategorized') AS help_category, COUNT(*) AS n
-    FROM chat_logs
-    WHERE role = 'student'
-    GROUP BY COALESCE(help_category, 'uncategorized')
-    ORDER BY n DESC
-  "))
-}
-
-#' Every student who has at least one logged chat message -- populates the
-#' dashboard's student picker for the transcript viewer.
-get_students_with_chats <- function(con) {
-  dbGetQuery(con, "
-    SELECT DISTINCT s.student_id, s.display_name
-    FROM chat_logs c
-    JOIN students s ON s.student_id = c.student_id
-    ORDER BY s.display_name
-  ")
-}
-
-#' Every exercise a given student has chat history for -- populates the
-#' dashboard's exercise picker once a student is selected.
-get_chatted_exercises_for_student <- function(con, student_id) {
-  dbGetQuery(con, "
-    SELECT DISTINCT e.exercise_id, e.title, m.module_number, e.order_index
-    FROM chat_logs c
-    JOIN exercises e ON e.exercise_id = c.exercise_id
-    JOIN modules m ON m.module_id = e.module_id
-    WHERE c.student_id = $1
-    ORDER BY m.module_number, e.order_index
-  ", params = list(student_id))
-}
-
-#' Full transcript (in order) for one student/exercise pair.
-get_chat_transcript <- function(con, student_id, exercise_id) {
-  dbGetQuery(con, "
-    SELECT role, message, help_category, created_at
-    FROM chat_logs
-    WHERE student_id = $1 AND exercise_id = $2
-    ORDER BY created_at
-  ", params = list(student_id, exercise_id))
 }

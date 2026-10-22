@@ -1,0 +1,51 @@
+"topic_id","module_number","topic_title","topic_order"
+"module-1-welcome",1,"Welcome",1
+"module-1-installing-r-and-rstudio",1,"Installing R and RStudio",2
+"module-1-the-rstudio-panes",1,"The RStudio panes",3
+"module-1-working-directory",1,"Working directory",4
+"module-1-wrapping-up",1,"Wrapping up",5
+"module-2-welcome-back",2,"Welcome back",6
+"module-2-packages",2,"Packages",7
+"module-2-the-console",2,"The Console",8
+"module-2-comments",2,"Comments",9
+"module-2-running-code-someone-gives-you",2,"Running code someone gives you",10
+"module-2-errors-and-warnings",2,"Errors and warnings",11
+"module-2-getting-help",2,"Getting help",12
+"module-2-wrapping-up",2,"Wrapping up",13
+"module-3-welcome-back",3,"Welcome back",14
+"module-3-data-types",3,"Data types",15
+"module-3-variables-and-names",3,"Variables and names",16
+"module-3-vectors",3,"Vectors",17
+"module-3-data-structures",3,"Data structures",18
+"module-3-functions-and-comparisons",3,"Functions and comparisons",19
+"module-3-turning-a-formula-into-code",3,"Turning a formula into code",20
+"module-3-importing-data",3,"Importing data",21
+"module-3-putting-it-together",3,"Putting it together",22
+"module-3-wrapping-up",3,"Wrapping up",23
+"module-4-welcome-back",4,"Welcome back",24
+"module-4-inspecting-a-data-frame",4,"Inspecting a data frame",25
+"module-4-renaming-columns",4,"Renaming columns",26
+"module-4-indexing-and-subsetting",4,"Indexing and subsetting",27
+"module-4-the-pipe-operator",4,"The pipe operator",28
+"module-4-filtering-and-selecting",4,"Filtering and selecting",29
+"module-4-adding-columns-and-sorting",4,"Adding columns and sorting",30
+"module-4-grouping-and-summarizing",4,"Grouping and summarizing",31
+"module-4-handling-missing-data",4,"Handling missing data",32
+"module-4-putting-it-together",4,"Putting it together",33
+"module-4-wrapping-up",4,"Wrapping up",34
+"module-5-welcome-back",5,"Welcome back",35
+"module-5-basic-plots-with-ggplot2",5,"Basic plots with ggplot2",36
+"module-5-bar-charts-from-summarized-data",5,"Bar charts from summarized data",37
+"module-5-histograms",5,"Histograms",38
+"module-5-putting-it-together",5,"Putting it together",39
+"module-5-working-habits",5,"Working habits",40
+"module-5-wrapping-up",5,"Wrapping up",41
+"module-6-welcome-back",6,"Welcome back",42
+"module-6-is-it-a-line-or-a-curve",6,"Is it a line, or a curve?",43
+"module-6-linear-regression",6,"Linear regression",44
+"module-6-r-squared-how-much-does-this-explain",6,"R-squared – how much does this explain?",45
+"module-6-rmse-how-far-off-are-the-guesses",6,"RMSE – how far off are the guesses?",46
+"module-6-training-data-vs.-new-data",6,"Training data vs. new data",47
+"module-6-comparing-two-models",6,"Comparing two models",48
+"module-6-wrapping-up",6,"Wrapping up",49
+"module-7-extra-practice",7,"Extra Practice",50

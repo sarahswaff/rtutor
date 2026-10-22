@@ -6,6 +6,12 @@
       "runtimeExecutable": "C:\\Program Files\\R\\R-4.5.2\\bin\\Rscript.exe",
       "runtimeArgs": ["C:/Users/sarah/OneDrive/Documents/R_tutor/r-tutor-app/R/run_tutorial.R"],
       "port": 7412
+    },
+    {
+      "name": "dashboard_demo",
+      "runtimeExecutable": "C:\\Program Files\\R\\R-4.5.2\\bin\\Rscript.exe",
+      "runtimeArgs": ["C:/Users/sarah/OneDrive/Documents/R_tutor/r-tutor-app/R/run_dashboard.R", "demo"],
+      "port": 7413
     }
   ]
 }

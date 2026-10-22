@@ -214,6 +214,91 @@ bs5_theme_dependencies <- function() {
   htmltools::tagList(bslib::bs_theme_dependencies(bslib::bs_theme(version = 5, bootswatch = "cerulean")))
 }
 
+#' Active-time tracking, for the instructor dashboard. The browser counts a
+#' 5-second tick as "active" only if the tab is visible AND there was a
+#' mouse/keyboard/scroll/touch event in the last 90 seconds (so an open but
+#' abandoned tab doesn't count), and reports the accumulated seconds to the
+#' server every 15 seconds as `input$activity_tick`. The server attributes
+#' each report to whichever `##` topic learnr says is current
+#' (`input[["tutorial-topic"]]` -- learnr's own topic-menu input binding,
+#' whose value is the topic's anchor id), accumulates per topic in a plain
+#' environment (not a reactiveVal -- session$onSessionEnded() runs outside
+#' any reactive context), and flushes to activity_time every
+#' `flush_every_secs` and once more at session end. Worst case, a crashed R
+#' process loses up to `flush_every_secs` of time; a normal tab close loses
+#' at most the last unsent 15 seconds.
+#'
+#' Place activity_tracker_ui() once (a plain chunk in the first `##` topic,
+#' like bs5_theme_dependencies()), and call activity_tracker_server() once
+#' from a context="server" chunk. Time before the name modal is submitted is
+#' still accumulated, and flushed once a student_id exists.
+activity_tracker_ui <- function() {
+  htmltools::tags$script(htmltools::HTML("
+(function() {
+  var TICK_MS = 5000, SEND_MS = 15000, IDLE_MS = 90000;
+  var lastInteraction = Date.now(), pending = 0;
+  ['mousemove', 'mousedown', 'keydown', 'scroll', 'wheel', 'touchstart'].forEach(function(ev) {
+    window.addEventListener(ev, function() { lastInteraction = Date.now(); }, { passive: true, capture: true });
+  });
+  setInterval(function() {
+    if (document.visibilityState === 'visible' && Date.now() - lastInteraction < IDLE_MS) {
+      pending += TICK_MS / 1000;
+    }
+  }, TICK_MS);
+  setInterval(function() {
+    if (pending > 0 && window.Shiny && Shiny.setInputValue) {
+      Shiny.setInputValue('activity_tick', pending, { priority: 'event' });
+      pending = 0;
+    }
+  }, SEND_MS);
+})();
+"))
+}
+
+activity_tracker_server <- function(input, session, flush_every_secs = 120) {
+  pending <- new.env()
+  pending$by_topic <- list()
+
+  flush <- function() {
+    student_id <- session$userData$student_id
+    if (is.null(student_id) || length(pending$by_topic) == 0) return(invisible(NULL))
+    rows <- pending$by_topic
+    pending$by_topic <- list()
+    tryCatch({
+      con <- get_con()
+      for (topic_id in names(rows)) {
+        r <- rows[[topic_id]]
+        log_activity(con, student_id, topic_id, r$seconds, r$window_start, r$window_end)
+      }
+      dbDisconnect(con)
+    }, error = function(e) message(paste("Activity logging failed:", e$message)))
+  }
+
+  shiny::observeEvent(input$activity_tick, {
+    secs <- suppressWarnings(as.numeric(input$activity_tick))
+    # 15s is the normal report size; anything far outside that is a bug or a
+    # tampered client, not real time on task.
+    if (length(secs) != 1 || !is.finite(secs) || secs <= 0 || secs > 60) return()
+    # learnr's pandoc build uses --id-prefix section-, so the raw value is
+    # e.g. 'section-module-4-indexing-and-subsetting'; store it without that.
+    topic_id <- sub("^section-", "", input[["tutorial-topic"]])
+    if (length(topic_id) != 1 || !nzchar(topic_id)) topic_id <- "unknown"
+    now <- Sys.time()
+    r <- pending$by_topic[[topic_id]]
+    if (is.null(r)) r <- list(seconds = 0, window_start = now - secs)
+    r$seconds <- r$seconds + secs
+    r$window_end <- now
+    pending$by_topic[[topic_id]] <- r
+  })
+
+  shiny::observe({
+    shiny::invalidateLater(flush_every_secs * 1000, session)
+    flush()
+  })
+
+  session$onSessionEnded(flush)
+}
+
 #' Plain-Shiny replacement for learnr::question(). See
 #' debug_recalculating_bug/HANDOFF.md for why: learnr's own quiz/exercise
 #' UI is dynamically injected via renderUI() after session start, and
@@ -236,6 +321,11 @@ bs5_theme_dependencies <- function() {
 #' message = "..."). Call quiz_question_ui() from a plain (non-server)
 #' chunk to place the UI, and quiz_question_server() once from a
 #' context="server" chunk to wire it up -- same `input_id` in both.
+#'
+#' Every submission is logged to quiz_responses (see log_quiz_response()).
+#' `module_number` is optional only so the old per-module tutorials/
+#' module_N.Rmd files (which source this same file) keep working unchanged;
+#' course.Rmd always passes it.
 quiz_question_ui <- function(input_id, label, choices) {
   htmltools::tagList(
     shiny::radioButtons(input_id, label = label, choices = choices, selected = character(0)),
@@ -244,10 +334,21 @@ quiz_question_ui <- function(input_id, label, choices) {
   )
 }
 
-quiz_question_server <- function(input, output, session, input_id, feedback) {
+quiz_question_server <- function(input, output, session, input_id, feedback, module_number = NA) {
   shiny::observeEvent(input[[paste0(input_id, "_submit")]], {
     shiny::req(input[[input_id]])
-    info <- feedback[[input[[input_id]]]]
+    choice_id <- input[[input_id]]
+    info <- feedback[[choice_id]]
+
+    student_id <- session$userData$student_id
+    if (!is.null(student_id)) {
+      tryCatch({
+        con <- get_con()
+        log_quiz_response(con, student_id, input_id, module_number, choice_id, isTRUE(info$correct))
+        dbDisconnect(con)
+      }, error = function(e) message(paste("Quiz logging failed:", e$message)))
+    }
+
     output[[paste0(input_id, "_feedback")]] <- shiny::renderUI({
       cls <- if (isTRUE(info$correct)) "alert alert-success" else "alert alert-danger"
       htmltools::tags$div(class = cls, info$message)

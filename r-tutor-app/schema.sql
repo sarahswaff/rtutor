@@ -64,11 +64,49 @@ create table chat_logs (
   created_at    timestamptz not null default now()
 );
 
+-- activity_time: how long a student was ACTIVELY on each learnr `##` topic.
+-- Written by activity_tracker_server() (R/tutor_utils.R), which accumulates
+-- client-reported active seconds per topic and flushes one row per topic
+-- every couple of minutes and at session end -- so a single visit to a topic
+-- can span several rows; always SUM(active_seconds), never read one row as
+-- "the visit". "Active" = tab visible AND a mouse/keyboard/scroll event in
+-- the last 90 seconds, so a tab left open overnight doesn't count.
+-- topic_id is learnr's own topic anchor (e.g. 'module-4-indexing-and-subsetting');
+-- module_number is parsed from it at write time (NULL if it doesn't parse).
+create table activity_time (
+  activity_id     bigserial primary key,
+  student_id      uuid not null references students(student_id),
+  topic_id        text not null,
+  module_number   int,
+  active_seconds  int not null check (active_seconds > 0),
+  window_start    timestamptz not null,
+  window_end      timestamptz not null,
+  created_at      timestamptz not null default now()
+);
+
+-- quiz_responses: one row per quiz submission (every retry kept, same
+-- philosophy as exercise_attempts). quiz_key is the quiz's input_id in
+-- course.Rmd (e.g. 'indexing_quiz'); choice_id is the internal ID of the
+-- option picked (e.g. 'wrong_compare') -- distractor IDs are deliberately
+-- descriptive, so which wrong answer gets picked is itself useful signal.
+create table quiz_responses (
+  response_id    bigserial primary key,
+  student_id     uuid not null references students(student_id),
+  quiz_key       text not null,
+  module_number  int,
+  choice_id      text not null,
+  correct        boolean not null,
+  created_at     timestamptz not null default now()
+);
+
 -- Indexes to keep dashboard queries fast as data grows.
 create index idx_attempts_student on exercise_attempts(student_id);
 create index idx_attempts_exercise on exercise_attempts(exercise_id);
 create index idx_chat_student on chat_logs(student_id);
 create index idx_chat_exercise on chat_logs(exercise_id);
+create index idx_activity_student on activity_time(student_id);
+create index idx_quiz_student on quiz_responses(student_id);
+create index idx_quiz_key on quiz_responses(quiz_key);
 
 -- exercise_mastery: a VIEW (not a table) giving each student's most recent
 -- pass/fail status per exercise, computed live from exercise_attempts.
