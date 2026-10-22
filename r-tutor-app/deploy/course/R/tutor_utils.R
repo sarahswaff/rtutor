@@ -299,6 +299,180 @@ activity_tracker_server <- function(input, session, flush_every_secs = 120) {
   session$onSessionEnded(flush)
 }
 
+#' Progress gating: a student can't move past a quiz until they've answered
+#' it correctly, or past an exercise until they've passed it (or failed it
+#' GATE_UNLOCK_AFTER_FAILS times -- an escape hatch so nobody is stuck
+#' forever; the exercise still counts as unpassed everywhere else).
+#'
+#' Why this exists: learnr's own progressive/allow_skip gating only counts
+#' learnr-native exercises, which this course replaced with plain Shiny (see
+#' quiz_question_ui()/exercise_ui()), so learnr never blocked anything. Rather
+#' than drive learnr's internals, the server tells the page which items exist
+#' and which are done, and gating_ui()'s script hides things itself:
+#'   - in the topic holding the first unfinished item, everything after that
+#'     item (except its own tutor panel), plus that section's Continue and the
+#'     topic's Next Topic buttons;
+#'   - every later topic, replaced by a "Locked" notice and marked in the
+#'     sidebar (sidebar clicks still navigate; they just land on the notice).
+#' It only adds/removes CSS classes on learnr's markup (.section.level2/3,
+#' button.skip, .topicActions, #tutorial-topic) -- if that markup ever
+#' changes, gating fails open (nothing hidden), not closed.
+#'
+#' quiz_question_server()/exercise_server() register their items and report
+#' completions automatically; they do nothing extra unless gating_server()
+#' was called for the session (so the old per-module Rmds are unaffected).
+#' A returning student's progress is restored from the database by
+#' gate_load_student(), called right after login.
+GATE_UNLOCK_AFTER_FAILS <- 5
+
+gating_ui <- function(exempt_topic_prefixes = character(0)) {
+  htmltools::tagList(
+    htmltools::tags$style(htmltools::HTML("
+.gate-hidden { display: none !important; }
+.section.level2.gate-locked > *:not(h2):not(.gate-notice) { display: none !important; }
+#tutorial-topic li.gate-locked-topic a { opacity: 0.45; }
+#tutorial-topic li.gate-locked-topic a::after { content: ' (locked)'; font-size: 0.8em; }
+")),
+    htmltools::tags$script(htmltools::HTML(sprintf("
+(function() {
+  var EXEMPT = %s;
+  var state = null;
+
+  function keepVisible(el, blocker) {
+    if (el.classList.contains('topicActions') || el.classList.contains('exerciseActions')) return true;
+    if (el.classList.contains('accordion')) {
+      // The blocking exercise's own tutor panel stays usable; panels that
+      // belong to later exercises are hidden with them; any other panel
+      // (e.g. install help) is never hidden.
+      return el.id === blocker.accordion || state.accordions.indexOf(el.id) === -1;
+    }
+    return false;
+  }
+
+  function clear() {
+    document.querySelectorAll('.gate-hidden').forEach(function(el) { el.classList.remove('gate-hidden'); });
+    document.querySelectorAll('.gate-locked').forEach(function(el) { el.classList.remove('gate-locked'); });
+    document.querySelectorAll('.gate-locked-topic').forEach(function(el) { el.classList.remove('gate-locked-topic'); });
+    document.querySelectorAll('.gate-notice').forEach(function(el) { el.remove(); });
+  }
+
+  function apply() {
+    if (!state) return;
+    clear();
+    var done = {};
+    state.completed.forEach(function(id) { done[id] = true; });
+    var items = state.items
+      .map(function(it) { return { id: it.id, accordion: it.accordion, el: document.getElementById(it.id + '_feedback') }; })
+      .filter(function(it) { return it.el; })
+      .sort(function(a, b) { return (a.el.compareDocumentPosition(b.el) & Node.DOCUMENT_POSITION_FOLLOWING) ? -1 : 1; });
+    var blocker = items.filter(function(it) { return !done[it.id]; })[0];
+    if (!blocker) return;
+
+    var topic = blocker.el.closest('.section.level2');
+    if (!topic) return;
+    for (var node = blocker.el; node && node !== topic; node = node.parentElement) {
+      for (var sib = node.nextElementSibling; sib; sib = sib.nextElementSibling) {
+        if (!keepVisible(sib, blocker)) sib.classList.add('gate-hidden');
+      }
+    }
+    var sub = blocker.el.closest('.section.level3');
+    if (sub) sub.querySelectorAll('button.skip').forEach(function(b) { b.classList.add('gate-hidden'); });
+    topic.querySelectorAll('.topicActions button[data-i18n=\"button.nexttopic\"]').forEach(function(b) { b.classList.add('gate-hidden'); });
+
+    var heading = topic.querySelector('h2');
+    var title = heading ? heading.textContent.trim() : 'the current topic';
+    var after = false;
+    document.querySelectorAll('.section.level2').forEach(function(t) {
+      if (t === topic) { after = true; return; }
+      if (!after || EXEMPT.some(function(p) { return t.id.indexOf(p) === 0; })) return;
+      t.classList.add('gate-locked');
+      var notice = document.createElement('div');
+      notice.className = 'gate-notice alert alert-secondary';
+      notice.textContent = 'Locked. Finish the questions and exercises in \"' + title + '\" first, and this topic will open.';
+      var h = t.querySelector('h2');
+      if (h) h.insertAdjacentElement('afterend', notice); else t.prepend(notice);
+      var link = document.querySelector('#tutorial-topic a[href=\"#' + t.id + '\"]');
+      if (link && link.parentElement) link.parentElement.classList.add('gate-locked-topic');
+    });
+  }
+
+  function ready() { Shiny.setInputValue('gate_ready', Date.now(), { priority: 'event' }); }
+  Shiny.addCustomMessageHandler('gate_state', function(msg) { state = msg; apply(); });
+  if (window.Shiny && Shiny.shinyapp && Shiny.shinyapp.isConnected && Shiny.shinyapp.isConnected()) ready();
+  else $(document).one('shiny:connected', ready);
+})();
+", jsonlite::toJSON(as.character(exempt_topic_prefixes))))))
+}
+
+gating_server <- function(input, session) {
+  gate <- new.env()
+  gate$quizzes <- character(0)
+  gate$exercises <- list()  # ui id -> list(key = exercise_key, accordion = accordion id)
+  gate$completed <- character(0)
+  gate$fails <- list()      # ui id -> failed attempts (database + this session)
+  session$userData$gate <- gate
+  shiny::observeEvent(input$gate_ready, gate_send(session))
+}
+
+gate_register_quiz <- function(session, id) {
+  gate <- session$userData$gate
+  if (!is.null(gate)) gate$quizzes <- union(gate$quizzes, id)
+}
+
+gate_register_exercise <- function(session, id, exercise_key, accordion_id) {
+  gate <- session$userData$gate
+  if (!is.null(gate)) gate$exercises[[id]] <- list(key = exercise_key, accordion = accordion_id)
+}
+
+gate_send <- function(session) {
+  gate <- session$userData$gate
+  if (is.null(gate)) return(invisible(NULL))
+  items <- c(
+    lapply(gate$quizzes, function(id) list(id = id, accordion = "")),
+    lapply(names(gate$exercises), function(id) list(id = id, accordion = gate$exercises[[id]]$accordion))
+  )
+  session$sendCustomMessage("gate_state", list(
+    items = items,
+    completed = as.list(gate$completed),
+    accordions = as.list(vapply(gate$exercises, function(e) e$accordion, character(1), USE.NAMES = FALSE))
+  ))
+}
+
+gate_complete <- function(session, id) {
+  gate <- session$userData$gate
+  if (is.null(gate) || id %in% gate$completed) return(invisible(NULL))
+  gate$completed <- c(gate$completed, id)
+  gate_send(session)
+}
+
+#' Records a failed exercise attempt. Returns TRUE exactly when this failure
+#' is the one that unlocks moving on (so the caller can say so).
+gate_record_fail <- function(session, id) {
+  gate <- session$userData$gate
+  if (is.null(gate) || id %in% gate$completed) return(FALSE)
+  gate$fails[[id]] <- (if (is.null(gate$fails[[id]])) 0 else gate$fails[[id]]) + 1
+  if (gate$fails[[id]] >= GATE_UNLOCK_AFTER_FAILS) {
+    gate_complete(session, id)
+    return(TRUE)
+  }
+  FALSE
+}
+
+gate_load_student <- function(session, con, student_id) {
+  gate <- session$userData$gate
+  if (is.null(gate)) return(invisible(NULL))
+  status <- get_student_gate_status(con, student_id)
+  done <- intersect(gate$quizzes, status$quizzes_correct)
+  for (id in names(gate$exercises)) {
+    row <- status$exercises[status$exercises$exercise_key == gate$exercises[[id]]$key, ]
+    if (nrow(row) == 0) next
+    gate$fails[[id]] <- row$n_failed[1]
+    if (isTRUE(row$passed[1]) || row$n_failed[1] >= GATE_UNLOCK_AFTER_FAILS) done <- c(done, id)
+  }
+  gate$completed <- union(gate$completed, done)
+  gate_send(session)
+}
+
 #' Plain-Shiny replacement for learnr::question(). See
 #' debug_recalculating_bug/HANDOFF.md for why: learnr's own quiz/exercise
 #' UI is dynamically injected via renderUI() after session start, and
@@ -335,6 +509,7 @@ quiz_question_ui <- function(input_id, label, choices) {
 }
 
 quiz_question_server <- function(input, output, session, input_id, feedback, module_number = NA) {
+  gate_register_quiz(session, input_id)
   shiny::observeEvent(input[[paste0(input_id, "_submit")]], {
     shiny::req(input[[input_id]])
     choice_id <- input[[input_id]]
@@ -348,6 +523,7 @@ quiz_question_server <- function(input, output, session, input_id, feedback, mod
         dbDisconnect(con)
       }, error = function(e) message(paste("Quiz logging failed:", e$message)))
     }
+    if (isTRUE(info$correct)) gate_complete(session, input_id)
 
     output[[paste0(input_id, "_feedback")]] <- shiny::renderUI({
       cls <- if (isTRUE(info$correct)) "alert alert-success" else "alert alert-danger"
@@ -399,6 +575,7 @@ exercise_ui <- function(id, starting_code, has_plot_output = FALSE) {
 }
 
 exercise_server <- function(input, output, session, id, exercise_key, accordion_id, starting_code, evaluate_fn, has_plot_output = FALSE) {
+  gate_register_exercise(session, id, exercise_key, accordion_id)
   shiny::observeEvent(input[[paste0(id, "_reset")]], {
     shiny::updateTextAreaInput(session, paste0(id, "_code"), value = starting_code)
     output[[paste0(id, "_feedback")]] <- shiny::renderUI(NULL)
@@ -415,6 +592,8 @@ exercise_server <- function(input, output, session, id, exercise_key, accordion_
 
     student_id <- session$userData$student_id
     log_attempt_and_maybe_open_chat(exercise_key, student_id, user_code, eval_result$passed, eval_result$message, accordion_id, session)
+    unlocked_by_attempts <- FALSE
+    if (eval_result$passed) gate_complete(session, id) else unlocked_by_attempts <- gate_record_fail(session, id)
 
     is_plot <- has_plot_output && !is_error && inherits(result, "ggplot")
     if (has_plot_output) {
@@ -433,7 +612,13 @@ exercise_server <- function(input, output, session, id, exercise_key, accordion_
         htmltools::tags$div(
           class = if (eval_result$passed) "alert alert-success" else "alert alert-danger",
           eval_result$message
-        )
+        ),
+        if (unlocked_by_attempts) {
+          htmltools::tags$div(
+            class = "alert alert-info",
+            "You've given this a real try, so you can move on now if you'd like. This exercise stays unfinished -- come back to it, or ask the tutor about it, any time."
+          )
+        }
       )
     })
   })

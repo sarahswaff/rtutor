@@ -68,6 +68,11 @@ evaluate_name_exercise <- function(result, stage) {
 # activity_tracker_ui()/activity_tracker_server() in R/tutor_utils.R.
 activity_tracker_server(input, session)
 
+# Progress gating -- quizzes/exercises must be finished before moving on.
+# Must run before any quiz_question_server()/exercise_server() call so they
+# can register. See gating_ui()/gating_server() in R/tutor_utils.R.
+gating_server(input, session)
+
 showModal(modalDialog(
   title = "Welcome!",
   "Please enter your name to begin this tutorial.",
@@ -82,6 +87,7 @@ observeEvent(input$submit_name, {
     con <- get_con()
     sid <- get_or_create_student(con, trimws(input$student_name))
     progress <- get_student_progress(con, sid)
+    gate_load_student(session, con, sid)
     dbDisconnect(con)
 
     session$userData$student_id <- sid
@@ -191,6 +197,8 @@ quiz_question_server(input, output, session, "wd_quiz", module_number = 1, list(
 # provides -- a deliberate simplification for this trivial one-line
 # exercise, not a general-purpose code editor replacement.
 
+gate_register_exercise(session, "name_exercise", "module1_name_check", "tutor_accordion_m1_1")
+
 observeEvent(input$name_exercise_reset, {
   updateTextAreaInput(session, "name_exercise_code", value = '"___"')
   output$name_exercise_feedback <- renderUI(NULL)
@@ -208,6 +216,7 @@ observeEvent(input$name_exercise_submit, {
     "module1_name_check", student_id, user_code,
     eval_result$passed, eval_result$message, "tutor_accordion_m1_1", session
   )
+  if (eval_result$passed) gate_complete(session, "name_exercise") else gate_record_fail(session, "name_exercise")
 
   output$name_exercise_feedback <- renderUI({
     tagList(
@@ -232,7 +241,10 @@ bs5_theme_dependencies()
 ```
 
 ```{r, echo=FALSE}
-activity_tracker_ui()
+tagList(
+  activity_tracker_ui(),
+  gating_ui(exempt_topic_prefixes = "section-module-7")
+)
 ```
 
 ```{r, echo=FALSE}
@@ -247,6 +259,7 @@ How it works:
 
 - **Quizzes** ask you to predict what code will do. Answer before you scroll back up to check -- the first try is the one that tells you whether you've got it.
 - **Exercises** have you write, fix, or finish real R code, and check it when you click **Submit Answer**. Submit as often as you like.
+- **The course opens up as you go.** Each quiz needs a correct answer and each exercise needs to pass before the next part appears. If an exercise has you truly stuck, the course will let you move on after several honest tries.
 - **Ask the Tutor** sits under every exercise. It's an AI tutor that sees your latest attempt -- use it whenever you're stuck *or* curious, before or after submitting. It will help you get there rather than hand you the answer.
 
 Nothing in this module involves writing R code yet -- that starts in Module 2.

@@ -1186,12 +1186,8 @@ future module:
     `learning_objective`s were general enough to still fit, so no DB changes. Every grader
     was tested against its starter code, each realistic intermediate wrong state, and a
     correct answer (each wrong state gets its own targeted hint), then live in a browser
-    with attempts/quiz rows confirmed in Supabase. **Decided: quizzes are tracked (dashboard)
-    but NOT hard-gated** -- the course's plain-Shiny exercises/quizzes aren't learnr-native,
-    so learnr's `progressive` gating doesn't actually enforce anything for them today;
-    real gating would need custom JS against learnr internals (the class of fix this project
-    has already been burned by). Modules 2, 3, 5, 6 still to be reworked the same way, after
-    the app owner reviews Module 4.
+    with attempts/quiz rows confirmed in Supabase. (A "track but don't gate quizzes" decision
+    made here was reversed the same day -- see item 20.)
 19. DONE (2026-10-22, same day): **the Module 4 template applied course-wide**: rigorous for
     students with some prior R experience AND accessible to someone who has never installed
     R. Design rationale like this stays in this file -- student- and tester-facing text
@@ -1242,7 +1238,33 @@ future module:
       outside help, transfer self-check, visuals). The RStudio checkpoints survive as
       `optional_rstudio_checkpoints.md` (tasks only), and `message_to_tester.md` was
       rewritten to match.
-20. Remaining:
+20. DONE (2026-10-22): **real progress gating.** The app owner found that nothing in the
+    course actually required doing anything before moving on -- true since the
+    `learnr::question()`/gradethis rewrite: learnr's `progressive`/`allow_skip` only counts
+    learnr-native exercises, so the YAML gating silently enforced nothing, and sidebar
+    jumps between `##` topics were never gated at all. Now: a quiz must be answered
+    correctly and an exercise passed (or failed `GATE_UNLOCK_AFTER_FAILS` = 5 times -- an
+    escape hatch so a stuck student isn't blocked forever; the exercise still counts as
+    unpassed on the dashboard, and the student is told so) before anything after it opens.
+    Implemented as `gating_ui()`/`gating_server()` + `gate_*()` helpers in
+    `R/tutor_utils.R`, deliberately NOT by driving learnr's JS: the server sends the page
+    the list of gated items and which are done, and a small script adds/removes CSS classes
+    on learnr's markup -- hides everything after the first unfinished item in its topic
+    (keeping that item's own tutor panel and any non-exercise panel like install help),
+    hides that section's Continue and the topic's Next Topic button, and replaces every
+    later topic with a "Locked" notice (sidebar entries greyed with "(locked)"; clicking
+    one just lands on the notice). If learnr's markup ever changes, this fails open, not
+    closed. `quiz_question_server()`/`exercise_server()` register and report automatically
+    (no-ops for the old per-module Rmds, which never call `gating_server()`); Module 1's
+    hand-written name exercise calls the helpers directly. `gating_server()` must run before
+    any quiz/exercise server chunk (it's in the identity chunk). A returning student's
+    progress is rebuilt at login from the DB (`get_student_gate_status()`: quizzes ever
+    answered correctly, exercises ever passed, failure counts), so nobody gets re-locked.
+    Module 7 practice is exempt. Verified live: locked before login; restored on login;
+    a wrong quiz answer keeps things locked and the right one unlocks; the 5th failed
+    attempt unlocks; a pass unlocks; progress survives a reload. The Module 1 welcome tells
+    students how it works.
+21. Remaining:
    - **Redeploy BOTH Connect Cloud apps** for the 2026-10-22 activity/quiz logging and the
      rebuilt dashboard (see "Instructor dashboard" above): `deploy/course/` (until then the
      live course logs neither active time nor quiz answers) and `deploy/instructor_dashboard/`.

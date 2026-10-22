@@ -117,6 +117,31 @@ log_activity <- function(con, student_id, topic_id, active_seconds, window_start
   )
 }
 
+#' Everything a returning student has already finished, for the course's
+#' progress gating (gate_load_student() in R/tutor_utils.R): which quizzes
+#' they've answered correctly at least once, and per exercise whether they've
+#' ever passed it and how many failed attempts they've made.
+get_student_gate_status <- function(con, student_id) {
+  list(
+    quizzes_correct = dbGetQuery(
+      con,
+      "SELECT DISTINCT quiz_key FROM quiz_responses WHERE student_id = $1 AND correct",
+      params = list(student_id)
+    )$quiz_key,
+    exercises = fix_int64_cols(dbGetQuery(
+      con,
+      "SELECT e.exercise_key,
+              bool_or(a.passed) AS passed,
+              COUNT(*) FILTER (WHERE NOT a.passed) AS n_failed
+       FROM exercise_attempts a
+       JOIN exercises e ON e.exercise_id = a.exercise_id
+       WHERE a.student_id = $1
+       GROUP BY e.exercise_key",
+      params = list(student_id)
+    ))
+  )
+}
+
 #' Record one quiz submission (every retry is its own row).
 log_quiz_response <- function(con, student_id, quiz_key, module_number, choice_id, correct) {
   dbExecute(
