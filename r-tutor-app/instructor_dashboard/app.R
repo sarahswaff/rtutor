@@ -34,7 +34,11 @@ fmt_num <- function(x, digits = 1) ifelse(is.na(x), "--", formatC(x, format = "f
 fmt_minutes <- function(x) {
   ifelse(is.na(x), "--", ifelse(x >= 60, sprintf("%dh %02dm", as.integer(x %/% 60), as.integer(round(x %% 60))), sprintf("%.0fm", x)))
 }
-fmt_time <- function(x) ifelse(is.na(x), "--", format(x, "%b %d, %H:%M"))
+# Timestamps are stored correctly (timestamptz), but format() uses the server's
+# timezone, and Connect Cloud runs on UTC -- so times showed up hours ahead.
+# Always display in the course's local time; DASHBOARD_TZ can override it.
+DISPLAY_TZ <- Sys.getenv("DASHBOARD_TZ", "America/Chicago")
+fmt_time <- function(x) ifelse(is.na(x), "--", format(x, "%b %d, %H:%M", tz = DISPLAY_TZ))
 pretty_category <- function(x) gsub("_", " ", x)
 
 simple_table <- function(df, page_length = 25, selection = "none", ...) {
